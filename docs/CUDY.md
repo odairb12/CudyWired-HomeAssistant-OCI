@@ -1,6 +1,6 @@
 # Cudy WR3000 + WireGuard
 
-O WR3000 atua como **cliente WireGuard** e conecta a rede residencial à VM OCI.
+O WR3000 atua como **cliente WireGuard** e conecta a rede residencial diretamente ao namespace de rede do host OCI.
 
 ## Topologia
 
@@ -14,7 +14,13 @@ Cudy LAN 192.168.10.0/24
           |
      10.13.13.1
        Oracle OCI
+          |
+      host network
+          |
+   Home Assistant / SSH / Portainer
 ```
+
+Com o WireGuard em `network_mode: host`, a interface `wg0` existe no próprio host Ubuntu. Isso elimina a necessidade de DNAT entre o namespace Docker e o host e permite que o Home Assistant, que também usa host network, acesse diretamente a LAN residencial.
 
 ## 1. Gerar o peer
 
@@ -72,25 +78,43 @@ WG_ALLOWED_IPS=10.13.13.1/32
 
 Isso faz com que os clientes atrás do Cudy usem o túnel para alcançar a OCI em `10.13.13.1`, sem transformar a VM Oracle no gateway padrão de toda a Internet residencial.
 
-Se você alterar `WG_ALLOWED_IPS` depois que o peer já foi importado no Cudy, gere/reimporte a configuração atualizada quando necessário.
-
 ## 4. Site-to-site OCI -> LAN
 
-O Compose também declara:
+O Compose declara:
 
 ```dotenv
 HOME_LAN_CIDR=192.168.10.0/24
 ```
 
-que é aplicado no servidor WireGuard como subnet adicional do peer `cudy`. Isso prepara o lado OCI para rotear a LAN residencial através do peer.
+No servidor WireGuard isso é aplicado ao peer `cudy` como subnet adicional. O resultado esperado em `wg show` é:
 
-Valide separadamente o sentido OCI -> LAN, porque ele também depende do encaminhamento/firewall do firmware Cudy.
+```text
+allowed ips: 10.13.13.2/32, 192.168.10.0/24
+```
 
-Exemplo de teste, a partir do container WireGuard:
+Como `wg0` roda no host, o próprio Ubuntu deve enxergar a rota:
 
 ```bash
-sudo docker exec wireguard ping -c 3 192.168.10.1
+ip addr show wg0
+ip route show 192.168.10.0/24
+ip route get 192.168.10.1
 ```
+
+A rota deve apontar para `wg0`, não para o gateway padrão da OCI.
+
+Teste primeiro o Cudy:
+
+```bash
+ping -c 3 192.168.10.1
+```
+
+Depois teste um dispositivo real da LAN:
+
+```bash
+ping -c 3 192.168.10.211
+```
+
+A partir desse ponto, integrações locais do Home Assistant podem alcançar dispositivos `192.168.10.x` diretamente, sujeito ao firewall e ao serviço disponível no dispositivo.
 
 ## 5. Validar handshake
 
@@ -108,7 +132,7 @@ transfer: ... received, ... sent
 Teste o peer:
 
 ```bash
-sudo docker exec wireguard ping -c 3 10.13.13.2
+ping -c 3 10.13.13.2
 ```
 
 ## 6. Acessos pela VPN
@@ -121,4 +145,14 @@ Portainer:      https://10.13.13.1:9443
 SSH:            ubuntu@10.13.13.1
 ```
 
-O `wireguard-post-start.sh` cria DNAT dentro do namespace do container para encaminhar essas três portas ao host OCI.
+Como esses serviços estão no host OCI e `wg0` também está no host, não há mais regra DNAT intermediária para esses acessos.
+
+## 7. Persistência
+
+As chaves e configurações do peer permanecem em:
+
+```text
+/srv/home-automation/wireguard/config
+```
+
+Recriar o container não deve apagar esse diretório. Não remova `peer_cudy` nem as chaves existentes sem intenção de reconfigurar o roteador.
