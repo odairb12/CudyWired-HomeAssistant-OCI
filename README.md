@@ -85,7 +85,9 @@ Pela VPN:
     ├── CUDY.md
     ├── SECURITY.md
     ├── TROUBLESHOOTING.md
-    └── MIGRATION.md
+    ├── MIGRATION.md
+    └── how-to/
+        └── MCP-OPENCODE.md
 ```
 
 ## Instalação rápida
@@ -310,7 +312,7 @@ OCI Security List / NSG -> exposição pública
 Estado recomendado:
 
 | Porta | Serviço | Internet |
-|---|---|---|
+|---|---|
 | UDP 51820 | WireGuard | Aberta |
 | TCP 22 | SSH | Fechada normalmente |
 | TCP 8123 | Home Assistant | Fechada normalmente |
@@ -356,6 +358,12 @@ sudo ./scripts/setup-home.sh
 ```
 
 Não remova o diretório antigo até validar Home Assistant, handshake WireGuard e acesso pelo Cudy. Consulte [`docs/MIGRATION.md`](docs/MIGRATION.md).
+
+## How to
+
+Guias práticos para configuração e uso do ambiente:
+
+1. [MCP - habilitar um Agent no OpenCode](docs/how-to/MCP-OPENCODE.md)
 
 ## Documentação
 
