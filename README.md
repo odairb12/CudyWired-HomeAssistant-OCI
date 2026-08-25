@@ -2,7 +2,7 @@
 
 Home Assistant em uma VM da **Oracle Cloud Infrastructure (OCI)**, executado em Docker e conectado à rede residencial por **WireGuard** através de um **Cudy WR3000**.
 
-A arquitetura mantém os arquivos de infraestrutura versionados no Git e os dados persistentes fora do repositório em `/srv/home-automation`.
+A infraestrutura fica versionada no Git e os dados persistentes ficam fora do repositório em `/srv/home-automation`.
 
 ## Estado validado
 
@@ -11,12 +11,13 @@ A arquitetura mantém os arquivos de infraestrutura versionados no Git e os dado
 - 2 GB de swap;
 - Home Assistant Container;
 - Portainer CE;
-- WireGuard em Docker;
+- WireGuard em Docker com `network_mode: host`;
 - Cudy WR3000 como cliente WireGuard;
 - VPN `10.13.13.0/24`;
 - LAN residencial `192.168.10.0/24` roteada pelo peer Cudy;
 - Home Assistant acessível pela rede do Cudy em `http://10.13.13.1:8123`;
-- OCI/WireGuard alcançando dispositivos reais da LAN residencial.
+- OCI e Home Assistant alcançando dispositivos reais da LAN residencial;
+- Internet residencial continuando pela WAN normal do Cudy através de split tunnel.
 
 ## Arquitetura
 
@@ -51,7 +52,7 @@ A arquitetura mantém os arquivos de infraestrutura versionados no Git e os dado
                             dispositivos LAN
 ```
 
-O WireGuard usa `network_mode: host`. Assim, `wg0` existe diretamente no host Ubuntu. Isso permite que o Home Assistant, que também usa host network, acesse `192.168.10.x` sem DNAT intermediário entre namespaces Docker.
+O WireGuard e o Home Assistant usam a rede do host. Assim, `wg0` existe diretamente no Ubuntu e o Home Assistant consegue acessar `192.168.10.x` sem DNAT entre namespaces Docker.
 
 Pela VPN:
 
@@ -103,11 +104,11 @@ IPv4 public: Yes
 SSH key:     sua chave pública
 ```
 
-A VM deve estar em uma subnet pública com Internet Gateway e rota de Internet. Detalhes em [`docs/OCI.md`](docs/OCI.md).
+A VM deve estar em subnet pública, com Internet Gateway e rota de Internet. Veja [`docs/OCI.md`](docs/OCI.md).
 
 ### 2. Security List / NSG
 
-Durante o bootstrap, libere SSH preferencialmente apenas para seu IP:
+Durante o bootstrap, libere SSH preferencialmente somente para seu IP:
 
 ```text
 TCP 22
@@ -121,7 +122,7 @@ UDP 51820
 Source: 0.0.0.0/0
 ```
 
-Depois da instalação, mantenha `22`, `8123` e `9443` fechadas na OCI. O firewall do Ubuntu fica preparado; se precisar de acesso público temporário, basta criar uma regra OCI para seu IP `/32`.
+Depois da instalação, mantenha `22`, `8123` e `9443` fechadas na OCI. O firewall do Ubuntu fica preparado; se precisar de acesso público temporário, basta abrir a porta correspondente na OCI para seu IP `/32`.
 
 ### 3. Clonar e configurar
 
@@ -148,7 +149,7 @@ WG_ALLOWED_IPS=10.13.13.1/32
 HOME_LAN_CIDR=192.168.10.0/24
 ```
 
-`WG_ALLOWED_IPS=10.13.13.1/32` mantém split tunnel. `HOME_LAN_CIDR` informa ao servidor WireGuard que a LAN residencial está atrás do peer `cudy`.
+`WG_ALLOWED_IPS=10.13.13.1/32` mantém split tunnel no peer. `HOME_LAN_CIDR` informa ao servidor WireGuard que a LAN residencial está atrás do Cudy.
 
 ### 4. Provisionar
 
@@ -156,7 +157,7 @@ HOME_LAN_CIDR=192.168.10.0/24
 sudo ./scripts/setup-home.sh
 ```
 
-O script instala pacotes básicos, 2 GB de swap, Docker Engine + Compose, `ip_forward`, `src_valid_mark`, firewall persistente, diretórios de runtime e sobe os serviços principais.
+O setup instala pacotes básicos, 2 GB de swap, Docker Engine + Compose, `ip_forward`, `src_valid_mark`, firewall persistente, diretórios de runtime e sobe os serviços principais.
 
 ### 5. Validar
 
@@ -164,7 +165,13 @@ O script instala pacotes básicos, 2 GB de swap, Docker Engine + Compose, `ip_fo
 sudo ./scripts/validate.sh
 ```
 
-Além dos containers, a validação verifica se `wg0` existe no host e se `192.168.10.0/24` está roteada por `wg0`.
+A saída normal é curta e retorna `STATUS: OK` ou `STATUS: ERRO`.
+
+Para diagnóstico detalhado:
+
+```bash
+sudo ./scripts/validate.sh --verbose
+```
 
 ## Containers
 
@@ -204,19 +211,49 @@ Após o primeiro start, o peer é gerado em:
 
 Esse arquivo contém chave privada e não deve ser enviado ao Git ou compartilhado.
 
-No Cudy:
+Importe o arquivo em:
 
 ```text
 Configurações -> VPN -> WireGuard
+```
 
+Depois configure o WR3000 assim:
+
+```text
 Ativar:         Sim
 Protocolo:      Cliente WireGuard
 Regra padrão:   Permitir todos os dispositivos
 Site a Site:    Ativado
-Política VPN:   Desativar
+Política VPN:   Sub-rede remota
+
+Sub-rede remota:
+Regra:          Permitir somente os listados
+Endereço IP:    10.13.13.0
+Máscara:        255.255.255.0
 ```
 
-Importe o arquivo do peer e salve. Valide:
+Essa política é importante. No firmware testado, deixar a política VPN desativada fez o roteador aplicar a VPN de forma ampla aos clientes e interrompeu a navegação normal da casa.
+
+O comportamento correto é:
+
+```text
+10.13.13.0/24 -> WireGuard -> OCI
+outros destinos -> WAN normal do Cudy
+```
+
+Confirme também o peer gerado:
+
+```bash
+sudo grep -E '^AllowedIPs' /srv/home-automation/wireguard/config/peer_cudy/peer_cudy.conf
+```
+
+Esperado:
+
+```text
+AllowedIPs = 10.13.13.1/32
+```
+
+Valide o servidor:
 
 ```bash
 sudo docker exec wireguard wg show
@@ -230,21 +267,36 @@ latest handshake: ...
 transfer: ... received, ... sent
 ```
 
-Depois valide o host:
+Valide as rotas:
 
 ```bash
 ip addr show wg0
 ip route show 192.168.10.0/24
-ping -c 3 192.168.10.1
+ip route get 192.168.10.211
 ```
 
-E um dispositivo real:
+O resultado deve usar `dev wg0`.
+
+Depois teste um dispositivo real:
 
 ```bash
 ping -c 3 192.168.10.211
 ```
 
-Detalhes em [`docs/CUDY.md`](docs/CUDY.md).
+E confirme que o Home Assistant enxerga a mesma rota:
+
+```bash
+sudo docker exec homeassistant ip route get 192.168.10.211
+```
+
+Por fim, conectado ao Cudy, valide simultaneamente:
+
+```text
+Internet normal pela WAN        OK
+http://10.13.13.1:8123          OK
+```
+
+Veja o procedimento detalhado em [`docs/CUDY.md`](docs/CUDY.md).
 
 ## Segurança
 

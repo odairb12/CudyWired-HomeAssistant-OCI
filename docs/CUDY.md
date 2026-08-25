@@ -46,19 +46,9 @@ Na interface do Cudy:
 Configurações -> VPN -> WireGuard
 ```
 
-Configuração usada:
+Importe o `peer_cudy.conf` em **Arquivo de configuração** e mantenha os parâmetros de interface/peer gerados pelo WireGuard.
 
-```text
-Ativar:         Sim
-Protocolo:      Cliente WireGuard
-Regra padrão:   Permitir todos os dispositivos
-Site a Site:    Ativado
-Política VPN:   Desativar
-```
-
-Em **Arquivo de configuração**, importe `cudy.conf`.
-
-Valores esperados após importação:
+Valores esperados após a importação:
 
 ```text
 Cudy VPN IP:    10.13.13.2
@@ -68,15 +58,53 @@ Endpoint:       IP público OCI
 Endpoint port:  51820
 ```
 
+### Política VPN obrigatória para split tunnel
+
+No firmware testado do WR3000, somente importar o arquivo não é suficiente para garantir que a Internet residencial continue saindo pela WAN normal. Configure a política do Cudy assim:
+
+```text
+Ativar:         Sim
+Protocolo:      Cliente WireGuard
+Regra padrão:   Permitir todos os dispositivos
+Site a Site:    Ativado
+Política VPN:   Sub-rede remota
+
+Sub-rede remota:
+Regra:          Permitir somente os listados
+Endereço IP:    10.13.13.0
+Máscara:        255.255.255.0
+```
+
+O resultado esperado é:
+
+```text
+Destino 10.13.13.0/24 -> WireGuard -> OCI
+Demais destinos       -> WAN normal do Cudy
+```
+
+Essa configuração foi necessária no ambiente validado. Sem a política **Sub-rede remota / Permitir somente os listados**, o Cudy pode aplicar a VPN de forma ampla aos clientes e interromper a navegação normal da casa.
+
 ## 3. Split tunnel
 
-O projeto define:
+O projeto também define no peer:
 
 ```dotenv
 WG_ALLOWED_IPS=10.13.13.1/32
 ```
 
-Isso faz com que os clientes atrás do Cudy usem o túnel para alcançar a OCI em `10.13.13.1`, sem transformar a VM Oracle no gateway padrão de toda a Internet residencial.
+O `AllowedIPs` do peer limita o destino WireGuard ao endereço OCI, enquanto a política **Sub-rede remota** do Cudy garante que os clientes da LAN só enviem `10.13.13.0/24` pela VPN.
+
+Confirme no arquivo gerado:
+
+```bash
+sudo grep -E '^AllowedIPs' /srv/home-automation/wireguard/config/peer_cudy/peer_cudy.conf
+```
+
+Esperado:
+
+```text
+AllowedIPs = 10.13.13.1/32
+```
 
 ## 4. Site-to-site OCI -> LAN
 
@@ -102,7 +130,7 @@ ip route get 192.168.10.1
 
 A rota deve apontar para `wg0`, não para o gateway padrão da OCI.
 
-Teste primeiro o Cudy:
+Teste o Cudy:
 
 ```bash
 ping -c 3 192.168.10.1
@@ -114,7 +142,17 @@ Depois teste um dispositivo real da LAN:
 ping -c 3 192.168.10.211
 ```
 
-A partir desse ponto, integrações locais do Home Assistant podem alcançar dispositivos `192.168.10.x` diretamente, sujeito ao firewall e ao serviço disponível no dispositivo.
+O Home Assistant compartilha a rede do host, portanto também deve enxergar a mesma rota:
+
+```bash
+sudo docker exec homeassistant ip route get 192.168.10.211
+```
+
+Esperado:
+
+```text
+192.168.10.211 dev wg0 src 10.13.13.1
+```
 
 ## 5. Validar handshake
 
@@ -135,7 +173,17 @@ Teste o peer:
 ping -c 3 10.13.13.2
 ```
 
-## 6. Acessos pela VPN
+## 6. Validar Internet e VPN ao mesmo tempo
+
+Depois de salvar a política no Cudy, valide a partir de um dispositivo conectado à LAN/Wi-Fi do WR3000:
+
+1. abra um site normal para confirmar que a Internet continua pela WAN;
+2. acesse `http://10.13.13.1:8123`;
+3. confirme que ambos funcionam simultaneamente.
+
+Se a Internet parar ao ativar a VPN, desative temporariamente o cliente WireGuard no Cudy e revise a política **Sub-rede remota** antes de reativar.
+
+## 7. Acessos pela VPN
 
 Conectado à rede do Cudy:
 
@@ -145,9 +193,9 @@ Portainer:      https://10.13.13.1:9443
 SSH:            ubuntu@10.13.13.1
 ```
 
-Como esses serviços estão no host OCI e `wg0` também está no host, não há mais regra DNAT intermediária para esses acessos.
+Como esses serviços estão no host OCI e `wg0` também está no host, não há regra DNAT intermediária para esses acessos.
 
-## 7. Persistência
+## 8. Persistência
 
 As chaves e configurações do peer permanecem em:
 
