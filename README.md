@@ -2,11 +2,9 @@
 
 Home Assistant em uma VM da **Oracle Cloud Infrastructure (OCI)**, executado em Docker e conectado à rede residencial por **WireGuard** através de um **Cudy WR3000**.
 
-O projeto foi estruturado para que a VM possa ser reconstruída de forma reproduzível: o `compose.yaml` é a fonte de verdade dos containers, o `setup-home.sh` prepara o host e os dados persistentes ficam fora do repositório em `/srv/home-automation`.
+A arquitetura mantém os arquivos de infraestrutura versionados no Git e os dados persistentes fora do repositório em `/srv/home-automation`.
 
 ## Estado validado
-
-A topologia foi validada com:
 
 - Ubuntu 24.04 Minimal;
 - `VM.Standard.E2.1.Micro` com 1 GB de RAM;
@@ -15,7 +13,10 @@ A topologia foi validada com:
 - Portainer CE;
 - WireGuard em Docker;
 - Cudy WR3000 como cliente WireGuard;
-- Home Assistant acessível pela rede do Cudy em `http://10.13.13.1:8123`.
+- VPN `10.13.13.0/24`;
+- LAN residencial `192.168.10.0/24` roteada pelo peer Cudy;
+- Home Assistant acessível pela rede do Cudy em `http://10.13.13.1:8123`;
+- OCI/WireGuard alcançando dispositivos reais da LAN residencial.
 
 ## Arquitetura
 
@@ -31,23 +32,26 @@ A topologia foi validada com:
                                    |
                           Ubuntu 24.04 Minimal
                                    |
-                                Docker
-                    +--------------+--------------+
-                    |              |              |
-              Home Assistant    Portainer      WireGuard
-                host:8123       host:9443      10.13.13.1
-                    |              |              |
-                    +--------------+--------------+
-                                                  |
-                                             VPN criptografada
-                                                  |
-                                           +------v------+
-                                           | Cudy WR3000 |
-                                           | 10.13.13.2  |
-                                           +------+------+
-                                                  |
-                                           192.168.10.0/24
+                +------------------+------------------+
+                |                  |                  |
+             ens3                wg0             Docker Engine
+          OCI network         10.13.13.1              |
+                                   |          +--------+--------+
+                                   |          |        |        |
+                                   |         HA    Portainer  WireGuard
+                                   |       host net             host net
+                                   |
+                             WireGuard VPN
+                                   |
+                            Cudy WR3000
+                            10.13.13.2
+                                   |
+                         192.168.10.0/24
+                                   |
+                            dispositivos LAN
 ```
+
+O WireGuard usa `network_mode: host`. Assim, `wg0` existe diretamente no host Ubuntu. Isso permite que o Home Assistant, que também usa host network, acesse `192.168.10.x` sem DNAT intermediário entre namespaces Docker.
 
 Pela VPN:
 
@@ -62,15 +66,16 @@ Pela VPN:
 ```text
 .
 ├── README.md
-├── compose.yaml                 # Orquestração Docker
-├── .env.example                 # Configuração sem segredos
+├── compose.yaml
+├── .env.example
+├── .gitignore
 ├── config/
 │   └── mosquitto/
 │       └── mosquitto.conf
 ├── scripts/
-│   ├── setup-home.sh            # Provisionamento idempotente do host
+│   ├── setup-home.sh
+│   ├── migrate-legacy-layout.sh
 │   ├── configure-host-firewall.sh
-│   ├── wireguard-post-start.sh  # DNAT VPN -> serviços do host
 │   └── validate.sh
 ├── systemd/
 │   └── home-automation-firewall.service
@@ -78,18 +83,15 @@ Pela VPN:
     ├── OCI.md
     ├── CUDY.md
     ├── SECURITY.md
-    └── TROUBLESHOOTING.md
+    ├── TROUBLESHOOTING.md
+    └── MIGRATION.md
 ```
 
-A organização separa **infraestrutura**, **configuração**, **scripts operacionais**, **persistência** e **documentação**, evitando gerar Compose ou arquivos de configuração dentro de um script monolítico.
+## Instalação rápida
 
----
+### 1. Criar a VM na OCI
 
-# Instalação rápida
-
-## 1. Criar a VM na OCI
-
-Resumo da configuração testada:
+Configuração testada:
 
 ```text
 Image:       Canonical Ubuntu 24.04 Minimal
@@ -101,9 +103,9 @@ IPv4 public: Yes
 SSH key:     sua chave pública
 ```
 
-A VM deve estar em uma **subnet pública** com Internet Gateway e rota de Internet. Veja o passo a passo completo em [`docs/OCI.md`](docs/OCI.md).
+A VM deve estar em uma subnet pública com Internet Gateway e rota de Internet. Detalhes em [`docs/OCI.md`](docs/OCI.md).
 
-## 2. Security List / NSG
+### 2. Security List / NSG
 
 Durante o bootstrap, libere SSH preferencialmente apenas para seu IP:
 
@@ -119,15 +121,9 @@ UDP 51820
 Source: 0.0.0.0/0
 ```
 
-Por padrão, deixe **22, 8123 e 9443 fechadas na OCI** depois da instalação. O host continua preparado para essas portas; se precisar de acesso público emergencial, basta criar temporariamente uma regra OCI para seu IP `/32`.
+Depois da instalação, mantenha `22`, `8123` e `9443` fechadas na OCI. O firewall do Ubuntu fica preparado; se precisar de acesso público temporário, basta criar uma regra OCI para seu IP `/32`.
 
-## 3. Conectar por SSH
-
-```bash
-ssh -i sua-chave.key ubuntu@IP_PUBLICO_OCI
-```
-
-## 4. Clonar o projeto
+### 3. Clonar e configurar
 
 ```bash
 sudo apt-get update
@@ -135,17 +131,11 @@ sudo apt-get install -y git
 
 git clone https://github.com/odairb12/CudyWired-HomeAssistant-OCI.git
 cd CudyWired-HomeAssistant-OCI
-```
-
-## 5. Configuração
-
-Crie `.env` a partir do exemplo:
-
-```bash
 cp .env.example .env
+chmod +x scripts/*.sh
 ```
 
-Os padrões já correspondem ao ambiente validado:
+Padrões:
 
 ```dotenv
 DATA_DIR=/srv/home-automation
@@ -158,31 +148,25 @@ WG_ALLOWED_IPS=10.13.13.1/32
 HOME_LAN_CIDR=192.168.10.0/24
 ```
 
-`WG_ALLOWED_IPS=10.13.13.1/32` mantém **split tunnel**: somente o endereço VPN da OCI é roteado pelo túnel, em vez de enviar toda a Internet da casa através da Oracle.
+`WG_ALLOWED_IPS=10.13.13.1/32` mantém split tunnel. `HOME_LAN_CIDR` informa ao servidor WireGuard que a LAN residencial está atrás do peer `cudy`.
 
-`HOME_LAN_CIDR` anuncia a LAN atrás do Cudy no lado servidor para o cenário site-to-site.
-
-## 6. Provisionar tudo
+### 4. Provisionar
 
 ```bash
-chmod +x scripts/*.sh
 sudo ./scripts/setup-home.sh
 ```
 
-O script:
+O script instala pacotes básicos, 2 GB de swap, Docker Engine + Compose, `ip_forward`, `src_valid_mark`, firewall persistente, diretórios de runtime e sobe os serviços principais.
 
-1. instala os pacotes básicos e OpenSSH;
-2. cria 2 GB de swap;
-3. habilita IP forwarding;
-4. instala Docker Engine e Compose Plugin pelo repositório oficial;
-5. cria os diretórios persistentes em `/srv/home-automation`;
-6. instala um serviço systemd idempotente para o firewall local;
-7. valida `compose.yaml`;
-8. baixa as imagens principais;
-9. sobe Home Assistant, Portainer e WireGuard;
-10. aguarda o Home Assistant ficar disponível e executa validações.
+### 5. Validar
 
-## 7. Containers
+```bash
+sudo ./scripts/validate.sh
+```
+
+Além dos containers, a validação verifica se `wg0` existe no host e se `192.168.10.0/24` está roteada por `wg0`.
+
+## Containers
 
 Ativos por padrão:
 
@@ -201,49 +185,30 @@ esphome
 zigbee2mqtt
 ```
 
-Verifique:
+Ativação sob demanda:
 
 ```bash
-sudo ./scripts/validate.sh
+sudo docker compose --profile mqtt up -d
+sudo docker compose --profile automation up -d
+sudo docker compose --profile esphome up -d
+sudo docker compose --profile zigbee up -d
 ```
 
----
+## Configurar o Cudy WR3000
 
-# Configurar o Cudy WR3000
-
-Após o primeiro start do WireGuard, o peer é gerado em:
+Após o primeiro start, o peer é gerado em:
 
 ```text
 /srv/home-automation/wireguard/config/peer_cudy/peer_cudy.conf
 ```
 
-Esse arquivo contém **chave privada**. Nunca o envie para Git nem o compartilhe.
-
-Copie temporariamente para o usuário Ubuntu:
-
-```bash
-sudo cp /srv/home-automation/wireguard/config/peer_cudy/peer_cudy.conf /home/ubuntu/cudy.conf
-sudo chown ubuntu:ubuntu /home/ubuntu/cudy.conf
-sudo chmod 600 /home/ubuntu/cudy.conf
-```
-
-Baixe para seu computador:
-
-```powershell
-scp -i .\sua-chave.key ubuntu@IP_PUBLICO_OCI:/home/ubuntu/cudy.conf .\
-```
+Esse arquivo contém chave privada e não deve ser enviado ao Git ou compartilhado.
 
 No Cudy:
 
 ```text
-Configurações
-  -> VPN
-  -> WireGuard
-```
+Configurações -> VPN -> WireGuard
 
-Use:
-
-```text
 Ativar:         Sim
 Protocolo:      Cliente WireGuard
 Regra padrão:   Permitir todos os dispositivos
@@ -251,36 +216,46 @@ Site a Site:    Ativado
 Política VPN:   Desativar
 ```
 
-Importe `cudy.conf` em **Arquivo de configuração** e clique em **Salvar & Aplicar**.
-
-Valide na OCI:
+Importe o arquivo do peer e salve. Valide:
 
 ```bash
 sudo docker exec wireguard wg show
 ```
 
-O peer deve mostrar `latest handshake` recente e contadores de `transfer` aumentando.
-
-Depois, conectado à rede do Cudy, abra:
+O peer deve mostrar:
 
 ```text
-http://10.13.13.1:8123
+allowed ips: 10.13.13.2/32, 192.168.10.0/24
+latest handshake: ...
+transfer: ... received, ... sent
 ```
 
-Detalhes: [`docs/CUDY.md`](docs/CUDY.md).
+Depois valide o host:
 
----
+```bash
+ip addr show wg0
+ip route show 192.168.10.0/24
+ping -c 3 192.168.10.1
+```
 
-# Segurança e exposição pública
+E um dispositivo real:
 
-A política do projeto é deliberadamente simples:
+```bash
+ping -c 3 192.168.10.211
+```
+
+Detalhes em [`docs/CUDY.md`](docs/CUDY.md).
+
+## Segurança
+
+A política é:
 
 ```text
-Firewall do Ubuntu -> deixa os serviços preparados
-OCI Security List  -> decide o que a Internet pode alcançar
+Firewall Ubuntu -> serviços preparados
+OCI Security List / NSG -> exposição pública
 ```
 
-Estado recomendado na OCI:
+Estado recomendado:
 
 | Porta | Serviço | Internet |
 |---|---|---|
@@ -289,15 +264,9 @@ Estado recomendado na OCI:
 | TCP 8123 | Home Assistant | Fechada normalmente |
 | TCP 9443 | Portainer | Fechada normalmente |
 
-Se precisar acessar diretamente pela Internet, abra temporariamente a porta desejada com `Source = SEU_IP_PUBLICO/32`, use o serviço e remova a regra.
+Se precisar de acesso direto, abra temporariamente a porta desejada com `Source = SEU_IP_PUBLICO/32`.
 
-Mais detalhes em [`docs/SECURITY.md`](docs/SECURITY.md).
-
----
-
-# Persistência
-
-Os arquivos de infraestrutura permanecem no Git. Os dados de runtime ficam fora do repositório:
+## Persistência
 
 ```text
 /srv/home-automation/
@@ -312,48 +281,9 @@ Os arquivos de infraestrutura permanecem no Git. Os dados de runtime ficam fora 
 └── backups/
 ```
 
-Isso permite atualizar ou reclonar o projeto sem misturar código com banco, configurações do Home Assistant ou chaves do WireGuard.
+O Boot Volume da OCI é persistente entre reboot/stop/start. Ao terminar uma instância, confira as opções de preservação do volume.
 
-O Boot Volume da OCI é persistente entre reboot/stop/start. Ao **terminar a instância**, confira as opções de preservação do volume antes de apagar a VM.
-
----
-
-# Serviços opcionais
-
-MQTT/Mosquitto:
-
-```bash
-sudo docker compose --profile mqtt up -d
-```
-
-Node-RED:
-
-```bash
-sudo docker compose --profile automation up -d
-```
-
-ESPHome:
-
-```bash
-sudo docker compose --profile esphome up -d
-```
-
-Zigbee2MQTT:
-
-```bash
-sudo docker compose --profile zigbee up -d
-```
-
-Em uma VM de 1 GB, acompanhe a memória antes de habilitar componentes extras:
-
-```bash
-sudo docker stats --no-stream
-free -h
-```
-
----
-
-# Atualização
+## Atualização
 
 ```bash
 git pull
@@ -362,54 +292,23 @@ sudo docker compose up -d
 sudo ./scripts/validate.sh
 ```
 
-O Home Assistant tem `stop_grace_period: 90s` para reduzir a chance de encerramento abrupto do SQLite durante recriações/atualizações.
+O Home Assistant usa `stop_grace_period: 90s`. Os logs Docker têm rotação de 10 MB / 3 arquivos por container.
 
-Os logs Docker usam rotação (`10 MB`, 3 arquivos por container) para evitar crescimento indefinido no Boot Volume.
+## Migração do layout legado
 
----
-
-# Backup
-
-Exemplo:
+Se a instalação anterior ainda usa `/opt/home-automation`:
 
 ```bash
-sudo tar -czf /home/ubuntu/home-automation-$(date +%Y%m%d-%H%M%S).tar.gz \
-  /srv/home-automation
+sudo ./scripts/migrate-legacy-layout.sh
+sudo ./scripts/setup-home.sh
 ```
 
-O backup contém **chaves WireGuard e dados sensíveis do Home Assistant**. Proteja-o como segredo.
+Não remova o diretório antigo até validar Home Assistant, handshake WireGuard e acesso pelo Cudy. Consulte [`docs/MIGRATION.md`](docs/MIGRATION.md).
 
----
+## Documentação
 
-# Integrações Home Assistant
-
-## Tuya
-
-No Home Assistant:
-
-```text
-Settings -> Devices & services -> Add integration -> Tuya
-```
-
-A integração oficial Tuya usa a infraestrutura cloud da Tuya; hospedar o Home Assistant na OCI não transforma automaticamente esses dispositivos em locais.
-
-## Alexa
-
-As opções principais são Home Assistant Cloud ou a configuração manual da integração Alexa Smart Home. A segunda exige arquitetura adicional para endpoint HTTPS e não faz parte do bootstrap deste repositório.
-
----
-
-# Documentação detalhada
-
-- [Criação e rede na OCI](docs/OCI.md)
+- [OCI](docs/OCI.md)
 - [Cudy WR3000 e WireGuard](docs/CUDY.md)
-- [Modelo de segurança](docs/SECURITY.md)
+- [Segurança](docs/SECURITY.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
-
-## Referências oficiais
-
-- Home Assistant Container: https://www.home-assistant.io/installation/linux
-- Docker Engine Ubuntu: https://docs.docker.com/engine/install/ubuntu/
-- LinuxServer WireGuard: https://docs.linuxserver.io/images/docker-wireguard/
-- OCI Compute: https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/launchinginstance.htm
-- Cudy VPN/WireGuard: https://docs.cudy.com/user_guide/industrial_router/vpn/
+- [Migração](docs/MIGRATION.md)
