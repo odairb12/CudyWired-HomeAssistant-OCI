@@ -1,0 +1,51 @@
+# Segurança
+
+## Princípio
+
+Há duas camadas distintas:
+
+1. **Firewall local da VM**: deixa os serviços preparados.
+2. **OCI Security List/NSG**: decide quais portas podem ser alcançadas pela Internet.
+
+Isso permite liberar acesso público temporário sem precisar alterar a VM.
+
+## Estado recomendado
+
+| Porta | Serviço | OCI |
+|---|---|---|
+| UDP 51820 | WireGuard | Aberta |
+| TCP 22 | SSH | Fechada normalmente |
+| TCP 8123 | Home Assistant | Fechada normalmente |
+| TCP 9443 | Portainer | Fechada normalmente |
+
+Para acesso temporário, prefira:
+
+```text
+Source CIDR = SEU_IP_PUBLICO/32
+```
+
+em vez de `0.0.0.0/0`.
+
+## Por que 51820 fica pública
+
+WireGuard precisa receber os pacotes UDP iniciais do Cudy pela Internet. A autenticação do túnel depende das chaves criptográficas do peer.
+
+## Segredos
+
+Nunca faça commit de:
+
+- `peer_cudy.conf`;
+- chaves SSH privadas;
+- chaves WireGuard;
+- backups de `/srv/home-automation`;
+- `.env` caso futuramente passe a conter segredo.
+
+O repositório mantém apenas `.env.example`.
+
+## Portainer
+
+O Portainer possui acesso ao Docker socket e, por consequência, alto privilégio sobre o host Docker. Não exponha `9443` permanentemente à Internet.
+
+## Logs
+
+O Compose limita os logs `json-file` a três arquivos de 10 MB por container para reduzir risco de crescimento indefinido no Boot Volume.
