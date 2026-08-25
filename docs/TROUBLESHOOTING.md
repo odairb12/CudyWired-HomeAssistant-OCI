@@ -34,25 +34,19 @@ sudo iptables -L INPUT -n -v --line-numbers
 
 Imagens OCI podem ter uma regra final `REJECT`; o serviço systemd deste projeto insere as portas necessárias antes dela.
 
-## WireGuard tem handshake, mas 10.13.13.1:8123 não abre
+## WireGuard tem handshake, mas 10.13.13.1 não responde
+
+Como o WireGuard usa `network_mode: host`, não existem mais regras DNAT Docker para 22/8123/9443. Verifique se a interface `wg0` foi criada no host:
 
 ```bash
 sudo docker exec wireguard wg show
-sudo docker exec wireguard iptables -t nat -L PREROUTING -n -v
+ip addr show wg0
 ```
 
-Devem existir DNATs para:
-
-```text
-22
-8123
-9443
-```
-
-Teste se o container consegue alcançar o host:
+Depois confirme as portas locais:
 
 ```bash
-sudo docker exec wireguard sh -c 'GW=$(ip route show default | awk "NR==1 {print \\$3}"); wget -S -O /dev/null http://$GW:8123'
+sudo ss -lntp | grep -E ':(22|8123|9443)\b'
 ```
 
 ## Handshake não aparece
@@ -69,9 +63,58 @@ sudo docker logs --tail 100 wireguard
 sudo ss -lunp | grep 51820
 ```
 
+## WireGuard alcança o Cudy, mas OCI não alcança 192.168.10.x
+
+Confirme primeiro os Allowed IPs:
+
+```bash
+sudo docker exec wireguard wg show
+```
+
+O peer deve conter:
+
+```text
+allowed ips: 10.13.13.2/32, 192.168.10.0/24
+```
+
+Depois confira a rota no host:
+
+```bash
+ip route show 192.168.10.0/24
+ip route get 192.168.10.1
+```
+
+A rota deve usar `wg0`. Se aparecer o gateway padrão da OCI (`ens3`), confirme `HOME_LAN_CIDR` no `.env` e recrie somente o WireGuard:
+
+```bash
+sudo docker compose up -d --force-recreate wireguard
+```
+
+Valide:
+
+```bash
+ping -c 3 192.168.10.1
+```
+
 ## Acesso VPN não funciona do computador
 
 Confirme primeiro que o computador está realmente conectado à LAN/Wi-Fi do Cudy. O endereço `10.13.13.1` só será roteado conforme a política WireGuard do WR3000.
+
+## `wg0` não aparece no host
+
+Confirme que o Compose atual possui:
+
+```yaml
+wireguard:
+  network_mode: host
+```
+
+Depois recrie o serviço:
+
+```bash
+sudo docker compose up -d --force-recreate wireguard
+ip addr show wg0
+```
 
 ## Memória
 
