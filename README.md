@@ -87,6 +87,7 @@ Pela VPN:
     ├── TROUBLESHOOTING.md
     ├── MIGRATION.md
     └── how-to/
+        ├── PRIMEIROS-PASSOS.md
         └── MCP-OPENCODE.md
 ```
 
@@ -312,7 +313,7 @@ OCI Security List / NSG -> exposição pública
 Estado recomendado:
 
 | Porta | Serviço | Internet |
-|---|---|
+|---|---|---|
 | UDP 51820 | WireGuard | Aberta |
 | TCP 22 | SSH | Fechada normalmente |
 | TCP 8123 | Home Assistant | Fechada normalmente |
@@ -363,7 +364,8 @@ Não remova o diretório antigo até validar Home Assistant, handshake WireGuard
 
 Guias práticos para configuração e uso do ambiente:
 
-1. [MCP - habilitar um Agent no OpenCode](docs/how-to/MCP-OPENCODE.md)
+1. [Primeiros passos - configurar dispositivos Tuya / Smart Life](docs/how-to/PRIMEIROS-PASSOS.md)
+2. [MCP - habilitar um Agent no OpenCode](docs/how-to/MCP-OPENCODE.md)
 
 ## Documentação
 
