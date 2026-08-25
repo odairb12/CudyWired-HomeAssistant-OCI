@@ -38,7 +38,7 @@ TZ="${TZ:-America/Sao_Paulo}"
 log "[1/10] System packages"
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  ca-certificates curl wget gnupg git jq vim htop iproute2 iptables openssh-server
+  ca-certificates curl wget gnupg git jq vim htop iproute2 iputils-ping iptables openssh-server
 
 timedatectl set-timezone "$TZ"
 systemctl enable --now ssh
@@ -57,6 +57,7 @@ cat >/etc/sysctl.d/99-homeautomation.conf <<'SYSCTL'
 vm.swappiness=10
 vm.vfs_cache_pressure=50
 net.ipv4.ip_forward=1
+net.ipv4.conf.all.src_valid_mark=1
 SYSCTL
 sysctl -p /etc/sysctl.d/99-homeautomation.conf
 
@@ -65,6 +66,7 @@ if ! command -v docker >/dev/null 2>&1; then
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
   chmod a+r /etc/apt/keyrings/docker.asc
+  # shellcheck disable=SC1091
   source /etc/os-release
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${UBUNTU_CODENAME:-$VERSION_CODENAME} stable" \
     >/etc/apt/sources.list.d/docker.list
