@@ -3,7 +3,7 @@ import time
 from homeassistant.components.button import ButtonEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .client import CudyApplyError, CudyCannotConnect, CudyUnsupportedFirmware, _inputs
-from .const import DOMAIN, SUPPORTED_FIRMWARE
+from .const import DOMAIN, SUPPORTED_FIRMWARE_PREFIX
 
 async def async_setup_entry(hass, entry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
@@ -19,7 +19,7 @@ class CudyRebootButton(CoordinatorEntity, ButtonEntity):
         self._attr_unique_id = f'{entry_id}_reboot'
 
     async def async_press(self) -> None:
-        if self.client.firmware and SUPPORTED_FIRMWARE not in self.client.firmware:
+        if self.client.firmware and not self.client.firmware.startswith(SUPPORTED_FIRMWARE_PREFIX):
             raise CudyUnsupportedFirmware(f'Writes blocked on firmware {self.client.firmware}')
 
         # Reboot is intentionally a no-retry operation. Read the authenticated
