@@ -55,7 +55,6 @@ def _form_fields(doc: str) -> dict[str, str]:
             out[html_lib.unescape(n.group(1))] = html_lib.unescape(match.group(2))
     return out
 
-# Backwards-compatible alias used by the reboot platform.
 _inputs = _form_fields
 
 def _text(doc: str) -> str:
@@ -77,6 +76,11 @@ def _bool_status(text: str):
     return None
 
 class CudyClient:
+    _GUEST_IFACES = {
+        '2.4': 'wlan02', '2.4ghz': 'wlan02', '24': 'wlan02',
+        '5': 'wlan12', '5ghz': 'wlan12',
+    }
+
     def __init__(self, host: str, username: str, password: str, verify_ssl: bool = True):
         if '://' not in host:
             host = 'http://' + host
@@ -161,7 +165,6 @@ class CudyClient:
 
     def _parse_clients(self,doc:str):
         devices=[]; seen=set()
-        # Parse table rows/cards independently so unrelated page IPs cannot shift MAC/IP pairing.
         blocks=re.findall(r'<tr\b[\s\S]*?</tr>|<li\b[\s\S]*?</li>|<div\b[^>]*(?:device|client)[^>]*>[\s\S]*?</div>',doc,re.I)
         if not blocks: blocks=[doc]
         for block in blocks:
@@ -182,28 +185,69 @@ class CudyClient:
         if not self.firmware or not self.firmware.startswith(SUPPORTED_FIRMWARE_PREFIX):
             raise CudyUnsupportedFirmware(f'Writes require confirmed {SUPPORTED_FIRMWARE_PREFIX} firmware; detected {self.firmware or "unknown"}')
 
-    async def async_set_guest(self,band:str,enabled:bool):
+    def _guest_iface(self, band: str) -> str:
+        iface = self._GUEST_IFACES.get(band.lower())
+        if not iface:
+            raise CudyApplyError(f'Unsupported guest band: {band}')
+        return iface
+
+    async def async_set_guest(self, band: str, enabled: bool):
+        await self.async_set_guest_bands([band], enabled)
+
+    async def async_set_guest_bands(self, bands: list[str], enabled: bool):
+        """Apply one or more Guest bands in a single LuCI POST/apply cycle."""
         self._assert_write_supported()
-        iface={'2.4':'wlan02','2.4ghz':'wlan02','24':'wlan02','5':'wlan12','5ghz':'wlan12'}.get(band.lower())
-        if not iface: raise CudyApplyError('Unsupported guest band')
+        ifaces = list(dict.fromkeys(self._guest_iface(band) for band in bands))
+        if not ifaces:
+            raise CudyApplyError('No guest bands supplied')
+        desired = '0' if enabled else '1'
+
         async with self._write_lock:
-            doc=await self.async_get('/cgi-bin/luci/admin/network/wireless/guest'); fields=_form_fields(doc)
-            current=fields.get(f'cbid.wireless.{iface}.disabled'); desired='0' if enabled else '1'
-            if current==desired: return
-            encryption=fields.get(f'cbid.wireless.{iface}.encryption','')
-            if enabled and encryption.lower() in ('','none','open'): raise CudyApplyError('Refusing to enable an open guest network')
-            if not fields.get('token'): raise CudyApplyError('Guest form token missing')
-            fields['timeclock']=str(int(time.time())); fields['cbi.submit']='1'; fields[f'cbi.cbe.wireless.{iface}.disabled']='1'; fields[f'cbid.wireless.{iface}.disabled']=desired
-            try: await self._request('POST','/cgi-bin/luci/admin/network/wireless/guest',data=fields,retry_get=False)
+            doc = await self.async_get('/cgi-bin/luci/admin/network/wireless/guest')
+            fields = _form_fields(doc)
+            if not fields.get('token'):
+                raise CudyApplyError('Guest form token missing')
+
+            changed = []
+            for iface in ifaces:
+                disabled_key = f'cbid.wireless.{iface}.disabled'
+                current = fields.get(disabled_key)
+                if current is None:
+                    raise CudyApplyError(f'Guest state field missing for {iface}')
+                if current == desired:
+                    continue
+                encryption = fields.get(f'cbid.wireless.{iface}.encryption', '')
+                if enabled and encryption.lower() in ('', 'none', 'open'):
+                    raise CudyApplyError(f'Refusing to enable open guest network on {iface}')
+                changed.append(iface)
+
+            if not changed:
+                return
+
+            fields['timeclock'] = str(int(time.time()))
+            fields['cbi.submit'] = '1'
+            for iface in changed:
+                fields[f'cbi.cbe.wireless.{iface}.disabled'] = '1'
+                fields[f'cbid.wireless.{iface}.disabled'] = desired
+
+            try:
+                await self._request('POST','/cgi-bin/luci/admin/network/wireless/guest',data=fields,retry_get=False)
             except CudySessionExpired:
                 await self.async_login(force=True)
-                check=_form_fields(await self.async_get('/cgi-bin/luci/admin/network/wireless/guest'))
-                if check.get(f'cbid.wireless.{iface}.disabled')==desired: return
-                raise CudyApplyError('Session expired during write; state unchanged or ambiguous')
+                check = _form_fields(await self.async_get('/cgi-bin/luci/admin/network/wireless/guest'))
+                if all(check.get(f'cbid.wireless.{iface}.disabled') == desired for iface in changed):
+                    return
+                raise CudyApplyError('Session expired during multi-band write; final state is ambiguous')
+
             await self._request('GET','/cgi-bin/luci/admin/servicectl/restart/guest,firewall',retry_get=False)
             for _ in range(30):
-                if 'finish' in _text(await self.async_get('/cgi-bin/luci/admin/servicectl/status')).lower(): break
+                if 'finish' in _text(await self.async_get('/cgi-bin/luci/admin/servicectl/status')).lower():
+                    break
                 await asyncio.sleep(1)
-            else: raise CudyApplyError('Guest/firewall apply timed out')
-            verify=_form_fields(await self.async_get('/cgi-bin/luci/admin/network/wireless/guest'))
-            if verify.get(f'cbid.wireless.{iface}.disabled')!=desired: raise CudyApplyError('Guest state verification failed')
+            else:
+                raise CudyApplyError('Guest/firewall apply timed out')
+
+            verify = _form_fields(await self.async_get('/cgi-bin/luci/admin/network/wireless/guest'))
+            failed = [iface for iface in changed if verify.get(f'cbid.wireless.{iface}.disabled') != desired]
+            if failed:
+                raise CudyApplyError(f'Guest state verification failed for: {", ".join(failed)}')
