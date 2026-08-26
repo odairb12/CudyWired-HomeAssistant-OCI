@@ -2,8 +2,8 @@ from __future__ import annotations
 import time
 from homeassistant.components.button import ButtonEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from .client import CudyApplyError, CudyCannotConnect, CudyUnsupportedFirmware, _inputs
-from .const import DOMAIN, SUPPORTED_FIRMWARE_PREFIX
+from .client import CudyApplyError, CudyCannotConnect, _inputs
+from .const import DOMAIN
 
 async def async_setup_entry(hass, entry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
@@ -19,24 +19,16 @@ class CudyRebootButton(CoordinatorEntity, ButtonEntity):
         self._attr_unique_id = f'{entry_id}_reboot'
 
     async def async_press(self) -> None:
-        if self.client.firmware and not self.client.firmware.startswith(SUPPORTED_FIRMWARE_PREFIX):
-            raise CudyUnsupportedFirmware(f'Writes blocked on firmware {self.client.firmware}')
-
-        # Reboot is intentionally a no-retry operation. Read the authenticated
-        # form immediately before POSTing and preserve all hidden CBI fields.
+        self.client._assert_write_supported()
         doc = await self.client.async_get('/cgi-bin/luci/admin/system/reboot')
         fields = _inputs(doc)
         if not fields.get('token'):
             raise CudyApplyError('Reboot form token missing')
         fields['timeclock'] = str(int(time.time()))
         fields['cbi.submit'] = '1'
-
         try:
-            await self.client._request(
-                'POST', '/cgi-bin/luci/admin/system/reboot', data=fields, retry_get=False
-            )
+            await self.client._request('POST', '/cgi-bin/luci/admin/system/reboot', data=fields, retry_get=False)
         except CudyCannotConnect:
-            # A reboot commonly closes the HTTP connection immediately after
-            # accepting the command. Do not retry because a duplicate reboot
-            # command is not safe or useful.
+            # The router can close the socket after accepting reboot. This is
+            # deliberately not retried; callers should treat it as unconfirmed.
             return
