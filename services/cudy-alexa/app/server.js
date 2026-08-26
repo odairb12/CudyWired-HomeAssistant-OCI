@@ -10,7 +10,20 @@ const TIMEOUT_MS=10000;
 function loadPolicy(){try{return YAML.parse(fs.readFileSync(process.env.POLICY_PATH||'/app/policy.yaml','utf8'))||{};}catch(e){console.error('policy load failed:',e.message);return{};}}
 const POLICY=loadPolicy();
 function permitted(g,k,f=false){const v=POLICY?.[g]?.[k];return v===undefined?f:v===true;}
-const E={uptime:'sensor.cudy_uptime',firmware:'sensor.cudy_firmware',lan:'sensor.cudy_lan_ip',clients:'sensor.cudy_connected_clients',wisp:'binary_sensor.cudy_wisp',wispSignal:'sensor.cudy_wisp_signal',vpn:'binary_sensor.cudy_vpn',vpnProtocol:'sensor.cudy_vpn_protocol',channel:'sensor.cudy_wifi_channel',guest24:'switch.cudy_guest_wifi_2_4_ghz',guest5:'switch.cudy_guest_wifi_5_ghz',reboot:'button.cudy_reboot_router'};
+const E={
+  uptime:process.env.HA_ENTITY_UPTIME||'sensor.cudy_uptime',
+  firmware:process.env.HA_ENTITY_FIRMWARE||'sensor.cudy_firmware',
+  lan:process.env.HA_ENTITY_LAN_IP||'sensor.cudy_lan_ip',
+  clients:process.env.HA_ENTITY_CLIENTS||'sensor.cudy_connected_clients',
+  wisp:process.env.HA_ENTITY_WISP||'binary_sensor.cudy_wisp',
+  wispSignal:process.env.HA_ENTITY_WISP_SIGNAL||'sensor.cudy_wisp_signal',
+  vpn:process.env.HA_ENTITY_VPN||'binary_sensor.cudy_vpn',
+  vpnProtocol:process.env.HA_ENTITY_VPN_PROTOCOL||'sensor.cudy_vpn_protocol',
+  channel:process.env.HA_ENTITY_WIFI_CHANNEL||'sensor.cudy_wifi_channel',
+  guest24:process.env.HA_ENTITY_GUEST_24||'switch.cudy_guest_wifi_2_4_ghz',
+  guest5:process.env.HA_ENTITY_GUEST_5||'switch.cudy_guest_wifi_5_ghz',
+  reboot:process.env.HA_ENTITY_REBOOT||'button.cudy_reboot_router'
+};
 async function ha(path,options={}){if(!HA_TOKEN)throw new Error('HA_TOKEN is not configured');const c=new AbortController(),t=setTimeout(()=>c.abort(),TIMEOUT_MS);try{const r=await fetch(HA_URL+path,{...options,signal:c.signal,headers:{authorization:`Bearer ${HA_TOKEN}`,'content-type':'application/json',...(options.headers||{})}});const text=await r.text();if(!r.ok)throw new Error(`HA HTTP ${r.status}: ${text.slice(0,120)}`);return text?JSON.parse(text):null;}finally{clearTimeout(t);}}
 async function state(id){return ha('/api/states/'+encodeURIComponent(id));}
 async function service(domain,name,id){return ha(`/api/services/${domain}/${name}`,{method:'POST',body:JSON.stringify({entity_id:id})});}
@@ -34,4 +47,4 @@ const fallbackHandler={canHandle:()=>true,handle:()=>response('Não reconheci es
 const skillIdGuard={process(h){const received=h.requestEnvelope?.context?.System?.application?.applicationId||h.requestEnvelope?.session?.application?.applicationId;if(!ALEXA_SKILL_ID||received!==ALEXA_SKILL_ID)throw new Error('Unauthorized Alexa application');}};
 const errorHandler={canHandle:()=>true,handle(h,e){console.error('alexa error:',e.message);return response('Ocorreu um erro ao processar o comando.');}};
 const skill=Alexa.SkillBuilders.custom().addRequestInterceptors(skillIdGuard).addRequestHandlers(launchHandler,networkStatus,detailStatus,guestControl,rebootHandler,confirmationHandler,cancelHandler,helpHandler,fallbackHandler).addErrorHandlers(errorHandler).create();
-const app=express();app.disable('x-powered-by');app.get('/health',async(_req,res)=>{try{await ha('/api/');res.json({ok:true,home_assistant:true});}catch(e){res.status(503).json({ok:false,home_assistant:false});}});app.post('/alexa',new ExpressAdapter(skill,true,true).getRequestHandlers());app.listen(Number(process.env.PORT||3000),'0.0.0.0',()=>console.log('cudy-alexa listening via Home Assistant'));
+const app=express();app.disable('x-powered-by');app.get('/health',async(_req,res)=>{try{await ha('/api/');res.json({ok:true,home_assistant:true});}catch(e){res.status(503).json({ok:false,home_assistant:false});}});app.post('/alexa',new ExpressAdapter(skill,true,true).getRequestHandlers());app.listen(Number(process.env.PORT||3000),'127.0.0.1',()=>console.log('cudy-alexa listening on localhost via Home Assistant'));
