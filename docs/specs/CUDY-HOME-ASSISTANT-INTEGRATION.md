@@ -2,50 +2,78 @@
 
 Implementation baseline: WR3000 V1.0 / firmware `2.4.19-20250828-192837`.
 
-This implementation follows the investigated scope supplied for the project: local polling through WireGuard, reusable LuCI session, confirmed read endpoints, Guest 2.4/5 switches, device tracking, diagnostics redaction, and conservative write semantics. The router panel remains private.
+## Architecture
 
-## Implemented
+There is now exactly one Cudy/LuCI implementation:
+
+```text
+Alexa Custom Skill -> cudy-alexa -> Home Assistant REST API
+                                      |
+                         custom_components/cudy
+                                      |
+                               WireGuard/LAN
+                                      |
+                                  Cudy WR3000
+```
+
+The Alexa backend no longer stores Cudy credentials, authenticates to LuCI, parses Cudy HTML, or writes directly to the router. It uses a dedicated Home Assistant Long-Lived Access Token and operates/query the semantic HA entities. Cudy credentials remain only in the Home Assistant config entry.
+
+## Implemented Home Assistant layer
 
 - LuCI double SHA-256 challenge login with aiohttp CookieJar and session reuse.
-- Serialized router polling and one controlled reauthentication after an expired session.
+- Controlled reauthentication after an expired session.
 - System, LAN, device summary/list, Wi-Fi, WISP, VPN and Guest reads.
 - Sensors: uptime, firmware, LAN IP, connected clients, WISP signal, VPN protocol, Wi-Fi channel.
 - Binary sensors: WISP and VPN.
-- Device trackers based on discovered client MACs.
+- Dynamic device trackers based on discovered clients.
 - Guest Wi-Fi 2.4 GHz (`wlan02`) and 5 GHz (`wlan12`) switches.
-- Guest write: GET → preserve form → change disabled only → apply guest/firewall → wait → GET verify.
-- Reboot button in Home Assistant using `/cgi-bin/luci/admin/system/reboot`, with authenticated form preservation and no retry after POST.
-- Alexa commands for Guest Wi-Fi ON/OFF and router reboot, with explicit confirmation before execution.
-- Alexa `RouterRebootIntent`, `GuestWifiControlIntent`, confirmation and cancellation intents versioned in `services/cudy-alexa/alexa/pt-BR.json`.
-- No blind POST retry for Guest or reboot.
-- Refusal to automatically enable a guest network detected as open.
-- Writes blocked when a different firmware is positively identified.
-- Redacted diagnostics.
-- Config flow limited to private IP targets.
-- Required `ALEXA_SKILL_ID` configuration documented in `.env.example`.
+- Guest write: GET -> preserve successful form controls -> change disabled -> apply guest/firewall -> wait -> GET verify.
+- Reboot button using the authenticated `/cgi-bin/luci/admin/system/reboot` form, without blind POST retry.
+- Writes require positively identified supported firmware; unknown firmware is read-only.
+- Diagnostics redact credentials and router host.
+- Config-entry startup uses Home Assistant retry/auth failure semantics.
+
+## Alexa layer
+
+The Alexa backend only performs:
+
+1. Alexa request signature/timestamp verification through the ASK Express adapter.
+2. `ALEXA_SKILL_ID` validation.
+3. Intent/slot processing and confirmation dialogue.
+4. Home Assistant state reads.
+5. Home Assistant `switch.turn_on`, `switch.turn_off` and `button.press` service calls.
+6. Voice response generation.
+
+Required backend environment:
+
+```text
+HA_URL=http://127.0.0.1:8123
+HA_TOKEN=<dedicated Home Assistant Long-Lived Access Token>
+ALEXA_SKILL_ID=<Amazon skill id>
+```
+
+`CUDY_USERNAME`, `CUDY_PASSWORD` and `CUDY_URL` must not be configured in the Alexa service anymore.
 
 ## Supported voice controls
 
-The Custom Skill supports the following control intents after the user invokes the skill:
+After invoking the Custom Skill:
 
-- ligar rede de convidados;
-- desligar rede de convidados;
+- status geral da rede;
+- quantidade de dispositivos conectados;
+- status WISP/VPN;
+- ligar/desligar rede de convidados;
 - ligar/desligar convidados em 2.4 GHz;
 - ligar/desligar convidados em 5 GHz;
 - reiniciar o roteador.
 
-Guest and reboot require a second confirmation utterance before execution. The backend serializes writes and refuses concurrent router changes.
+Guest and reboot require explicit confirmation. Guest operations are verified by re-reading the Home Assistant switch state after the service call.
 
-## Intentionally not implemented as controls
+## Intentionally excluded controls
 
-Factory reset, firmware upgrade, LAN/WAN/WISP/VPN mutation, firewall mutation, log clearing and broad service restart remain excluded. Those operations were not validated on hardware and have a significantly larger blast radius. Discovery of an endpoint is not sufficient evidence for a destructive implementation.
+Factory reset, firmware upgrade, LAN/WAN/WISP/VPN mutation, firewall mutation, log clearing and broad service restart remain excluded because they were not validated and have a larger blast radius.
 
-## Hardware-validation status
+## Hardware validation
 
-Guest POST and `/servicectl/restart/guest,firewall` were discovered during investigation but were not executed in the original mapping session. The implementation therefore uses read-before-write, preserves the form, never blindly retries POST, waits for `servicectl/status`, and verifies final state.
+Guest POST, `servicectl/restart/guest,firewall`, and reboot were discovered but not executed in the original mapping session. The integration uses read-before-write, no blind write retry, firmware gating and final Guest verification. These operations still require supervised physical WR3000 validation before being considered production-validated.
 
-Reboot uses the authenticated reboot form and treats an immediate connection drop as an expected success condition because the router can terminate HTTP as it restarts. It never retries a reboot POST.
-
-These controls are implemented but still require supervised validation on the physical WR3000 before being considered production-validated.
-
-Bandwidth remains unsupported because the simple discovered request returned HTTP 500 and required parameters are unknown. WAN online state is not inferred from panel reachability because no authoritative read endpoint was confirmed.
+Bandwidth remains unsupported because the discovered simple request returned HTTP 500 and required parameters are unknown. WAN online state is not inferred from panel reachability because no authoritative endpoint was confirmed.
