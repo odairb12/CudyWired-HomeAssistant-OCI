@@ -93,3 +93,21 @@ docker compose down
 ```
 
 Isso libera as portas 80/443 e não altera a configuração do Cudy. Para remover a exposição pública correspondente, remova também as regras TCP 80/443 da Security List/NSG da OCI e do firewall local, após confirmar que nenhum outro serviço depende delas.
+
+## Fonte versionada e implantação
+
+A configuração do serviço está versionada em `services/cudy-alexa/`. O arquivo `.env` permanece exclusivamente na OCI e é ignorado pelo Git.
+
+Para implantar uma atualização:
+
+```bash
+cd /home/ubuntu/CudyWired-HomeAssistant-OCI
+cp -a services/cudy-alexa /home/ubuntu/cudy-alexa
+cd /home/ubuntu/cudy-alexa
+cp .env.example .env
+chmod 600 .env
+# preencher CUDY_PASSWORD somente no .env local
+docker compose up -d --build
+```
+
+O cliente reutiliza a sessão LuCI e só executa novo login quando identifica expiração. O endpoint `/status` é diagnóstico local; o Caddy permite da Internet apenas `/health` e `/alexa`.

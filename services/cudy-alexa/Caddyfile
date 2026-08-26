@@ -1,0 +1,11 @@
+{
+  email admin@home-d20.duckdns.org
+}
+
+home-d20.duckdns.org {
+  @publicEndpoints path /health /alexa
+  handle @publicEndpoints {
+    reverse_proxy 127.0.0.1:3000
+  }
+  respond 404
+}
