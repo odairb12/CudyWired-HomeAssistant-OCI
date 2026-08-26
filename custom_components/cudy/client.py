@@ -6,9 +6,8 @@ import logging
 import random
 import re
 import time
-from urllib.parse import urlencode
 import aiohttp
-from .const import SUPPORTED_FIRMWARE
+from .const import SUPPORTED_FIRMWARE_PREFIX
 from .models import CudyClientDevice, CudySnapshot
 
 _LOGGER = logging.getLogger(__name__)
@@ -133,7 +132,6 @@ class CudyClient:
         paths = {
           'system':'/cgi-bin/luci/admin/system/status','lan':'/cgi-bin/luci/admin/network/lan/status','devices':'/cgi-bin/luci/admin/network/devices/status','devlist':'/cgi-bin/luci/admin/network/devices/devlist','wifi':'/cgi-bin/luci/admin/network/wireless/status','wisp':'/cgi-bin/luci/admin/network/wireless/wds/status','vpn':'/cgi-bin/luci/admin/network/vpn/status','guest':'/cgi-bin/luci/admin/network/wireless/guest'}
         raw = {}
-        # Firmware has shown session instability under concurrent LuCI requests: serialize reads.
         for key,path in paths.items(): raw[key] = await self.async_get(path)
         txt = {k:_text(v) for k,v in raw.items()}
         firmware = _match(txt['system'], [r'(?:Firmware|Versão do Firmware)\s*[:\-]?\s*([\w.\-]+(?:\s+US)?)'])
@@ -164,7 +162,7 @@ class CudyClient:
         return devices
 
     async def async_set_guest(self, band: str, enabled: bool):
-        if self.firmware and SUPPORTED_FIRMWARE not in self.firmware:
+        if self.firmware and not self.firmware.startswith(SUPPORTED_FIRMWARE_PREFIX):
             raise CudyUnsupportedFirmware(f'Writes blocked on firmware {self.firmware}')
         iface = {'2.4':'wlan02','2.4ghz':'wlan02','24':'wlan02','5':'wlan12','5ghz':'wlan12'}.get(band.lower())
         if not iface: raise CudyApplyError('Unsupported guest band')
@@ -174,18 +172,17 @@ class CudyClient:
             current = fields.get(f'cbid.wireless.{iface}.disabled')
             desired = '0' if enabled else '1'
             if current == desired: return
-            # Never enable a confirmed open guest network automatically.
             encryption = fields.get(f'cbid.wireless.{iface}.encryption','')
             if enabled and encryption.lower() in ('','none','open'): raise CudyApplyError('Refusing to enable an open guest network')
             payload = {k:v for k,v in fields.items() if not SENSITIVE.search(k) or k in ('token','_csrf')}
-            # Preserve key/password fields for the router even though they are never logged.
             for k,v in fields.items():
                 if re.search(r'(\.key$|password)', k, re.I): payload[k]=v
             payload['timeclock']=str(int(time.time())); payload['cbi.submit']='1'; payload[f'cbi.cbe.wireless.{iface}.disabled']='1'; payload[f'cbid.wireless.{iface}.disabled']=desired
             try:
-                await self._request('POST','/cgi-bin/luci/admin/network/wireless/guest',data=urlencode(payload),retry_get=False)
+                # Passing a mapping makes aiohttp encode the body as
+                # application/x-www-form-urlencoded, matching LuCI forms.
+                await self._request('POST','/cgi-bin/luci/admin/network/wireless/guest',data=payload,retry_get=False)
             except CudySessionExpired:
-                # Never blindly retry a write. Re-read state first.
                 await self.async_login(force=True)
                 check=_inputs(await self.async_get('/cgi-bin/luci/admin/network/wireless/guest'))
                 if check.get(f'cbid.wireless.{iface}.disabled') == desired: return
