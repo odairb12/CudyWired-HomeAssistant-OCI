@@ -6,4 +6,5 @@ CONF_VERIFY_SSL = "verify_ssl"
 CONF_EXPERIMENTAL_GUEST_WRITE = "experimental_guest_write"
 SUPPORTED_HARDWARE = "WR3000 V1.0"
 SUPPORTED_FIRMWARE = "2.4.19-20250828-192837"
+SUPPORTED_FIRMWARE_PREFIX = "2.4.19"
 PLATFORMS = ["sensor", "binary_sensor", "switch", "button", "device_tracker"]
