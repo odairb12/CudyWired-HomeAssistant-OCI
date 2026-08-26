@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .client import CudyError
+from .client import CudyAuthError, CudyError
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,5 +26,7 @@ class CudyCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         try:
             return await self.client.async_snapshot()
+        except CudyAuthError as exc:
+            raise ConfigEntryAuthFailed from exc
         except CudyError as exc:
             raise UpdateFailed(str(exc)) from exc
