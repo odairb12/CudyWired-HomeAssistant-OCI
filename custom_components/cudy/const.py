@@ -1,0 +1,9 @@
+DOMAIN = "cudy"
+DEFAULT_HOST = "192.168.10.1"
+DEFAULT_USERNAME = "admin"
+DEFAULT_SCAN_INTERVAL = 30
+CONF_VERIFY_SSL = "verify_ssl"
+CONF_EXPERIMENTAL_GUEST_WRITE = "experimental_guest_write"
+SUPPORTED_HARDWARE = "WR3000 V1.0"
+SUPPORTED_FIRMWARE = "2.4.19-20250828-192837"
+PLATFORMS = ["sensor", "binary_sensor", "switch", "device_tracker"]
