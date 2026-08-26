@@ -17,6 +17,8 @@ Isso permite liberar acesso público temporário sem precisar alterar a VM.
 | TCP 22 | SSH | Fechada normalmente |
 | TCP 8123 | Home Assistant | Fechada normalmente |
 | TCP 9443 | Portainer | Fechada normalmente |
+| TCP 80 | Desafio ACME/redirecionamento HTTPS da Custom Skill | Aberta para Internet |
+| TCP 443 | Endpoint HTTPS da Custom Skill | Aberta para Internet |
 
 Para acesso temporário, prefira:
 
@@ -25,6 +27,12 @@ Source CIDR = SEU_IP_PUBLICO/32
 ```
 
 em vez de `0.0.0.0/0`.
+
+## Exceção pública: Custom Skill Alexa
+
+A Custom Skill usa `https://home-d20.duckdns.org/alexa`. O Caddy expõe somente TCP 80/443 para emitir/renovar o certificado e receber requisições autenticadas da Alexa. O serviço de aplicação escuta exclusivamente em `127.0.0.1:3000` e acessa o Cudy pela WireGuard.
+
+Não use estas portas para publicar LuCI, Home Assistant ou Portainer.
 
 ## Por que 51820 fica pública
 

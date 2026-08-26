@@ -1,6 +1,6 @@
-# CudyWired Home Assistant OCI
+# CudyWired OCI
 
-Home Assistant em uma VM da **Oracle Cloud Infrastructure (OCI)**, executado em Docker e conectado à rede residencial por **WireGuard** através de um **Cudy WR3000**.
+Serviços Docker em uma VM da **Oracle Cloud Infrastructure (OCI)** conectados à rede residencial por **WireGuard** através de um **Cudy WR3000**. Inclui Home Assistant independente e uma Alexa Custom Skill sem depender do Home Assistant.
 
 A infraestrutura fica versionada no Git e os dados persistentes ficam fora do repositório em `/srv/home-automation`.
 
@@ -85,7 +85,8 @@ Pela VPN:
     ├── CUDY.md
     ├── SECURITY.md
     ├── TROUBLESHOOTING.md
-    └── MIGRATION.md
+    ├── MIGRATION.md
+    └── ALEXA-CUSTOM-SKILL.md
 ```
 
 ## Instalação rápida
@@ -315,6 +316,8 @@ Estado recomendado:
 | TCP 22 | SSH | Fechada normalmente |
 | TCP 8123 | Home Assistant | Fechada normalmente |
 | TCP 9443 | Portainer | Fechada normalmente |
+| TCP 80 | Desafio ACME/redirecionamento HTTPS da Skill Alexa | Aberta para Internet |
+| TCP 443 | Endpoint HTTPS da Skill Alexa | Aberta para Internet |
 
 Se precisar de acesso direto, abra temporariamente a porta desejada com `Source = SEU_IP_PUBLICO/32`.
 
@@ -364,3 +367,4 @@ Não remova o diretório antigo até validar Home Assistant, handshake WireGuard
 - [Segurança](docs/SECURITY.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Migração](docs/MIGRATION.md)
+- [Alexa Custom Skill e Cudy](docs/ALEXA-CUSTOM-SKILL.md)

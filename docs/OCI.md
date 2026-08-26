@@ -64,6 +64,15 @@ Source Port:      All
 Destination Port: 51820
 ```
 
+Para a Custom Skill Alexa, mantenha também:
+
+```text
+TCP 80  Source: 0.0.0.0/0  Destination Port: 80
+TCP 443 Source: 0.0.0.0/0  Destination Port: 443
+```
+
+Essas portas atendem somente o proxy HTTPS da skill.
+
 Normalmente não publique:
 
 ```text
