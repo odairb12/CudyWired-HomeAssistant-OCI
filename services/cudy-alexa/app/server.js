@@ -51,18 +51,73 @@ async function summary() {
   ]);
   return { system, clients, wisp, vpn };
 }
-function concise(s) { return s.slice(0, 700); }
+function concise(s, limit = 360) { return s.slice(0, limit).replace(/\s+/g, ' ').trim(); }
 function response(text) { return { outputSpeech: { type: 'PlainText', text }, shouldEndSession: true }; }
-const handlers = {
+function confirmation(text, pendingAction) { return { outputSpeech: { type: 'PlainText', text }, reprompt: { outputSpeech: { type: 'PlainText', text: 'Diga confirmar ou cancelar.' } }, shouldEndSession: false, sessionAttributes: { pendingAction } }; }
+function slot(handlerInput, name) { return Alexa.getSlotValue(handlerInput.requestEnvelope, name) || ''; }
+async function reading(path, label) { return { label, value: concise(await page(path)) }; }
+async function statusOverview() {
+  const values = await Promise.all([
+    reading('/cgi-bin/luci/admin/system/status', 'sistema'),
+    reading('/cgi-bin/luci/admin/network/devices/status', 'dispositivos'),
+    reading('/cgi-bin/luci/admin/network/wireless/wds/status', 'conexão WISP'),
+    reading('/cgi-bin/luci/admin/network/vpn/status', 'VPN')
+  ]);
+  return values;
+}
+const launchHandler = {
   canHandle(h) { return Alexa.getRequestType(h.requestEnvelope) === 'LaunchRequest'; },
-  handle() { return response('Olá. Posso informar o status da sua rede Cudy. Pergunte: como está a rede?'); }
+  handle() { return response('Olá. Posso informar o status da rede, Wi-Fi, WISP, VPN, DHCP e dispositivos conectados.'); }
 };
 const networkStatus = {
-  canHandle(h) { return Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && ['NetworkStatusIntent','AMAZON.HelpIntent'].includes(Alexa.getIntentName(h.requestEnvelope)); },
-  async handle() { try { const data = await summary(); return response('O roteador está acessível pela VPN. Status do sistema: ' + concise(data.system) + '. Clientes: ' + concise(data.clients) + '.'); } catch (err) { console.error('status query failed:', err.message); return response('Não consegui consultar o roteador agora. A conexão segura com a residência pode estar indisponível.'); } }
+  canHandle(h) { return Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'NetworkStatusIntent'; },
+  async handle() { try { await statusOverview(); return response('O roteador está acessível pela conexão segura. Posso também informar sobre Wi-Fi, VPN, WISP, DHCP ou dispositivos conectados.'); } catch (err) { console.error('network status failed:', err.message); return response('Não consegui consultar o roteador agora. A conexão segura com a residência pode estar indisponível.'); } }
 };
-const fallback = { canHandle() { return true; }, handle() { return response('Não entendi. Você pode perguntar: como está a rede?'); } };
-const skill = Alexa.SkillBuilders.custom().addRequestHandlers(handlers, networkStatus, fallback).create();
+const detailStatus = {
+  canHandle(h) { return Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'NetworkDetailIntent'; },
+  async handle(h) {
+    const category = slot(h, 'Category').toLowerCase();
+    const sources = {
+      lan: ['/cgi-bin/luci/admin/network/lan/status', 'LAN'], wifi: ['/cgi-bin/luci/admin/network/wireless/status', 'Wi-Fi'],
+      wisp: ['/cgi-bin/luci/admin/network/wireless/wds/status', 'WISP'], vpn: ['/cgi-bin/luci/admin/network/vpn/status', 'VPN'],
+      dhcp: ['/cgi-bin/luci/admin/services/dhcp/status', 'DHCP'], convidados: ['/cgi-bin/luci/admin/network/wireless/guest', 'Wi-Fi de convidados'],
+      dispositivos: ['/cgi-bin/luci/admin/network/devices/status', 'dispositivos conectados'], sistema: ['/cgi-bin/luci/admin/system/status', 'sistema']
+    };
+    const source = sources[category] || sources.sistema;
+    try { const text = await page(source[0]); return response('Status de ' + source[1] + ': ' + concise(text) + '.'); }
+    catch (err) { console.error('detail status failed:', err.message); return response('Não consegui consultar ' + source[1] + ' agora.'); }
+  }
+};
+const guestControl = {
+  canHandle(h) { return Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'GuestWifiControlIntent'; },
+  handle(h) {
+    const action = slot(h, 'Action').toLowerCase(); const band = slot(h, 'Band') || 'todas as bandas';
+    if (!['ligar', 'desligar'].includes(action)) return response('Diga ligar ou desligar o Wi-Fi de convidados.');
+    return confirmation('Você pediu para ' + action + ' o Wi-Fi de convidados em ' + band + '. Esta alteração pode desconectar convidados. Diga confirmar para continuar ou cancelar.', { type: 'guest', action, band });
+  }
+};
+const reboot = {
+  canHandle(h) { return Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'RouterRebootIntent'; },
+  handle() { return confirmation('Isso reiniciará o roteador e interromperá a Internet temporariamente. Diga confirmar reinício para continuar ou cancelar.', { type: 'reboot' }); }
+};
+const confirmationHandler = {
+  canHandle(h) { return Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && ['ConfirmActionIntent', 'AMAZON.YesIntent'].includes(Alexa.getIntentName(h.requestEnvelope)); },
+  handle(h) {
+    const pending = h.attributesManager.getSessionAttributes().pendingAction;
+    if (!pending) return response('Não há nenhuma ação pendente para confirmar.');
+    return response('A ação foi confirmada, mas a execução no Cudy permanece desabilitada até a validação controlada do comando. Nenhuma alteração foi feita.');
+  }
+};
+const cancelHandler = {
+  canHandle(h) { return Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && ['CancelActionIntent', 'AMAZON.NoIntent', 'AMAZON.CancelIntent', 'AMAZON.StopIntent'].includes(Alexa.getIntentName(h.requestEnvelope)); },
+  handle() { return response('Operação cancelada. Nenhuma alteração foi feita.'); }
+};
+const helpHandler = {
+  canHandle(h) { return Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'AMAZON.HelpIntent'; },
+  handle() { return response('Você pode perguntar como está a rede, Wi-Fi, VPN, WISP, DHCP ou dispositivos conectados. Também pode pedir o reinício ou ligar e desligar o Wi-Fi de convidados, com confirmação.'); }
+};
+const fallback = { canHandle() { return true; }, handle() { return response('Não entendi. Você pode pedir o status da rede.'); } };
+const skill = Alexa.SkillBuilders.custom().addRequestHandlers(launchHandler, networkStatus, detailStatus, guestControl, reboot, confirmationHandler, cancelHandler, helpHandler, fallback).create();
 const adapter = new ExpressAdapter(skill, true, true);
 const app = express();
 app.disable('x-powered-by');

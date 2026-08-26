@@ -111,3 +111,16 @@ docker compose up -d --build
 ```
 
 O cliente reutiliza a sessão LuCI e só executa novo login quando identifica expiração. O endpoint `/status` é diagnóstico local; o Caddy permite da Internet apenas `/health` e `/alexa`.
+
+
+## Imagem pública
+
+A imagem é publicada pelo GitHub Actions em `ghcr.io/odairb12/cudy-alexa:latest`. A OCI executa a imagem, sem montar código-fonte. O arquivo `.env` com as credenciais do Cudy permanece local e nunca é incluído na imagem, no repositório ou no registry.
+
+Após uma nova publicação:
+
+```bash
+cd /home/ubuntu/cudy-alexa
+docker compose pull app
+docker compose up -d app
+```

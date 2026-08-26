@@ -1,7 +1,8 @@
 services:
   app:
     env_file: .env
-    build: ./app
+    image: ghcr.io/odairb12/cudy-alexa:latest
+    pull_policy: always
     network_mode: host
     restart: unless-stopped
   caddy:
