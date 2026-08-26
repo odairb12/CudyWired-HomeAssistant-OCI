@@ -14,19 +14,38 @@ This implementation follows the investigated scope supplied for the project: loc
 - Device trackers based on discovered client MACs.
 - Guest Wi-Fi 2.4 GHz (`wlan02`) and 5 GHz (`wlan12`) switches.
 - Guest write: GET → preserve form → change disabled only → apply guest/firewall → wait → GET verify.
-- No blind POST retry.
+- Reboot button in Home Assistant using `/cgi-bin/luci/admin/system/reboot`, with authenticated form preservation and no retry after POST.
+- Alexa commands for Guest Wi-Fi ON/OFF and router reboot, with explicit confirmation before execution.
+- Alexa `RouterRebootIntent`, `GuestWifiControlIntent`, confirmation and cancellation intents versioned in `services/cudy-alexa/alexa/pt-BR.json`.
+- No blind POST retry for Guest or reboot.
 - Refusal to automatically enable a guest network detected as open.
 - Writes blocked when a different firmware is positively identified.
 - Redacted diagnostics.
 - Config flow limited to private IP targets.
-- Alexa interaction model and required `ALEXA_SKILL_ID` configuration added.
+- Required `ALEXA_SKILL_ID` configuration documented in `.env.example`.
+
+## Supported voice controls
+
+The Custom Skill supports the following control intents after the user invokes the skill:
+
+- ligar rede de convidados;
+- desligar rede de convidados;
+- ligar/desligar convidados em 2.4 GHz;
+- ligar/desligar convidados em 5 GHz;
+- reiniciar o roteador.
+
+Guest and reboot require a second confirmation utterance before execution. The backend serializes writes and refuses concurrent router changes.
 
 ## Intentionally not implemented as controls
 
-Reboot, factory reset, firmware upgrade, LAN/WAN/WISP/VPN mutation, firewall mutation, log clearing and broad service restart remain excluded. They were explicitly outside the integration's safe/default scope and/or were not validated on hardware. Discovery of an endpoint is not sufficient evidence for a destructive implementation.
+Factory reset, firmware upgrade, LAN/WAN/WISP/VPN mutation, firewall mutation, log clearing and broad service restart remain excluded. Those operations were not validated on hardware and have a significantly larger blast radius. Discovery of an endpoint is not sufficient evidence for a destructive implementation.
 
-## Still requires hardware validation
+## Hardware-validation status
 
-Guest POST and `/servicectl/restart/guest,firewall` were discovered but not executed during the investigation. The code therefore uses conservative read-before-write, no blind retry, final verification, firmware gating, and refuses to enable an open guest SSID. Validate under supervision before exposing Guest switches to Alexa.
+Guest POST and `/servicectl/restart/guest,firewall` were discovered during investigation but were not executed in the original mapping session. The implementation therefore uses read-before-write, preserves the form, never blindly retries POST, waits for `servicectl/status`, and verifies final state.
+
+Reboot uses the authenticated reboot form and treats an immediate connection drop as an expected success condition because the router can terminate HTTP as it restarts. It never retries a reboot POST.
+
+These controls are implemented but still require supervised validation on the physical WR3000 before being considered production-validated.
 
 Bandwidth remains unsupported because the simple discovered request returned HTTP 500 and required parameters are unknown. WAN online state is not inferred from panel reachability because no authoritative read endpoint was confirmed.
