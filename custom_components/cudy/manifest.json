@@ -1,0 +1,10 @@
+{
+  "domain": "cudy",
+  "name": "Cudy WR3000",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/odairb12/CudyWired-HomeAssistant-OCI",
+  "iot_class": "local_polling",
+  "requirements": [],
+  "version": "0.1.0"
+}
