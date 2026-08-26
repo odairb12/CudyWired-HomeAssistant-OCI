@@ -1,4 +1,6 @@
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const YAML = require('yaml');
 const express = require('express');
 const Alexa = require('ask-sdk-core');
 const { ExpressAdapter } = require('ask-sdk-express-adapter');
@@ -6,9 +8,42 @@ const { ExpressAdapter } = require('ask-sdk-express-adapter');
 const BASE = (process.env.CUDY_URL || 'http://192.168.10.1').replace(/\/$/, '');
 const USER = process.env.CUDY_USERNAME || 'admin';
 const PASSWORD = process.env.CUDY_PASSWORD;
+const ALEXA_SKILL_ID = process.env.ALEXA_SKILL_ID || '';
 const TIMEOUT_MS = 8000;
 let cookie = '';
 let loginPromise = null;
+
+function loadPolicy() {
+  try { return YAML.parse(fs.readFileSync(process.env.POLICY_PATH || '/app/policy.yaml', 'utf8')) || {}; }
+  catch (err) { console.error('policy load failed:', err.message); return {}; }
+}
+const POLICY = loadPolicy();
+function permitted(group, key, fallback = false) {
+  const value = POLICY?.[group]?.[key];
+  return value === undefined ? fallback : value === true;
+}
+const READ_CAPABILITIES = {
+  sistema: { path: '/cgi-bin/luci/admin/system/status', label: 'sistema', key: 'system' },
+  lan: { path: '/cgi-bin/luci/admin/network/lan/status', label: 'LAN', key: 'lan' },
+  dispositivos: { path: '/cgi-bin/luci/admin/network/devices/status', label: 'dispositivos conectados', key: 'devices' },
+  wifi: { path: '/cgi-bin/luci/admin/network/wireless/status', label: 'Wi-Fi', key: 'wifi' },
+  convidados: { path: '/cgi-bin/luci/admin/network/wireless/guest', label: 'Wi-Fi de convidados', key: 'guest_wifi' },
+  wisp: { path: '/cgi-bin/luci/admin/network/wireless/wds/status', label: 'WISP', key: 'wisp' },
+  vpn: { path: '/cgi-bin/luci/admin/network/vpn/status', label: 'VPN', key: 'vpn' },
+  dhcp: { path: '/cgi-bin/luci/admin/services/dhcp/status', label: 'DHCP', key: 'dhcp' },
+  mesh: { path: '/cgi-bin/luci/admin/network/mesh/status', label: 'mesh', key: 'mesh' },
+  rotas: { path: '/cgi-bin/luci/admin/system/status/ip4routes', label: 'rotas', key: 'routes' },
+  interfaces: { path: '/cgi-bin/luci/admin/system/status/ifstat', label: 'interfaces', key: 'interfaces' },
+  arp: { path: '/cgi-bin/luci/admin/system/status/arp', label: 'dispositivos ARP', key: 'arp' },
+  firewall: { path: '/cgi-bin/luci/admin/network/firewall', label: 'firewall', key: 'firewall' },
+  upnp: { path: '/cgi-bin/luci/admin/network/upnp', label: 'UPnP', key: 'upnp' },
+  igmp: { path: '/cgi-bin/luci/admin/network/igmp', label: 'IGMP', key: 'igmp' }
+};
+const CONTROL_CAPABILITIES = {
+  reboot: 'reboot', convidados: 'guest_wifi', firewall: 'firewall', upnp: 'upnp', igmp: 'igmp',
+  port_forward: 'port_forward', wifi_principal: 'wifi_main', wisp: 'wisp', wan: 'wan', vpn: 'vpn',
+  dhcp: 'dhcp', firmware: 'firmware', reset: 'factory_reset'
+};
 
 function digest(value) { return crypto.createHash('sha256').update(value, 'utf8').digest('hex'); }
 function clean(html) { return html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim(); }
@@ -39,7 +74,7 @@ async function login() {
 async function page(path) {
   if (!cookie) await login();
   let response = await fetchCudy(path); let html = await response.text();
-  if (response.status === 401 || response.status === 403 || /luci_password2|name=["']luci_password/i.test(html)) {
+  if (response.status === 301 || response.status === 302 || response.status === 401 || response.status === 403 || /luci_password2|name=["']luci_password/i.test(html)) {
     cookie = ''; await login(); response = await fetchCudy(path); html = await response.text();
   }
   if (!response.ok) throw new Error('Cudy returned HTTP ' + response.status);
@@ -57,12 +92,13 @@ function confirmation(text, pendingAction) { return { outputSpeech: { type: 'Pla
 function slot(handlerInput, name) { return Alexa.getSlotValue(handlerInput.requestEnvelope, name) || ''; }
 async function reading(path, label) { return { label, value: concise(await page(path)) }; }
 async function statusOverview() {
-  const values = await Promise.all([
-    reading('/cgi-bin/luci/admin/system/status', 'sistema'),
-    reading('/cgi-bin/luci/admin/network/devices/status', 'dispositivos'),
-    reading('/cgi-bin/luci/admin/network/wireless/wds/status', 'conexão WISP'),
-    reading('/cgi-bin/luci/admin/network/vpn/status', 'VPN')
-  ]);
+  // Cudy invalidates or redirects concurrent LuCI requests in the same session.
+  // Keep this sequence serialized.
+  const values = [];
+  values.push(await reading('/cgi-bin/luci/admin/system/status', 'sistema'));
+  values.push(await reading('/cgi-bin/luci/admin/network/devices/status', 'dispositivos'));
+  values.push(await reading('/cgi-bin/luci/admin/network/wireless/wds/status', 'conexão WISP'));
+  values.push(await reading('/cgi-bin/luci/admin/network/vpn/status', 'VPN'));
   return values;
 }
 const launchHandler = {
@@ -77,28 +113,35 @@ const detailStatus = {
   canHandle(h) { return Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'NetworkDetailIntent'; },
   async handle(h) {
     const category = slot(h, 'Category').toLowerCase();
-    const sources = {
-      lan: ['/cgi-bin/luci/admin/network/lan/status', 'LAN'], wifi: ['/cgi-bin/luci/admin/network/wireless/status', 'Wi-Fi'],
-      wisp: ['/cgi-bin/luci/admin/network/wireless/wds/status', 'WISP'], vpn: ['/cgi-bin/luci/admin/network/vpn/status', 'VPN'],
-      dhcp: ['/cgi-bin/luci/admin/services/dhcp/status', 'DHCP'], convidados: ['/cgi-bin/luci/admin/network/wireless/guest', 'Wi-Fi de convidados'],
-      dispositivos: ['/cgi-bin/luci/admin/network/devices/status', 'dispositivos conectados'], sistema: ['/cgi-bin/luci/admin/system/status', 'sistema']
-    };
-    const source = sources[category] || sources.sistema;
-    try { const text = await page(source[0]); return response('Status de ' + source[1] + ': ' + concise(text) + '.'); }
-    catch (err) { console.error('detail status failed:', err.message); return response('Não consegui consultar ' + source[1] + ' agora.'); }
+    const source = READ_CAPABILITIES[category] || READ_CAPABILITIES.sistema;
+    if (!permitted('read', source.key, true)) return response('A consulta de ' + source.label + ' está desabilitada pela política da skill.');
+    try { const text = await page(source.path); return response('Status de ' + source.label + ': ' + concise(text) + '.'); }
+    catch (err) { console.error('detail status failed:', err.message); return response('Não consegui consultar ' + source.label + ' agora.'); }
+  }
+};
+const protectedControl = {
+  canHandle(h) { return Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'RouterControlIntent'; },
+  handle(h) {
+    const target = slot(h, 'Target').toLowerCase().replace(/\s+/g, '_');
+    const action = slot(h, 'Action').toLowerCase();
+    const capability = CONTROL_CAPABILITIES[target];
+    if (!capability) return response('Esse controle não é reconhecido pela política da skill.');
+    if (!permitted('control', capability)) return response('A alteração de ' + target.replace(/_/g, ' ') + ' está desabilitada pela política da skill.');
+    return confirmation('Você pediu para ' + action + ' ' + target.replace(/_/g, ' ') + '. Diga confirmar para continuar ou cancelar.', { type: target, action });
   }
 };
 const guestControl = {
   canHandle(h) { return Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'GuestWifiControlIntent'; },
   handle(h) {
     const action = slot(h, 'Action').toLowerCase(); const band = slot(h, 'Band') || 'todas as bandas';
+    if (!permitted('control', CONTROL_CAPABILITIES.convidados)) return response('O controle do Wi-Fi de convidados está desabilitado pela política da skill.');
     if (!['ligar', 'desligar'].includes(action)) return response('Diga ligar ou desligar o Wi-Fi de convidados.');
     return confirmation('Você pediu para ' + action + ' o Wi-Fi de convidados em ' + band + '. Esta alteração pode desconectar convidados. Diga confirmar para continuar ou cancelar.', { type: 'guest', action, band });
   }
 };
 const reboot = {
   canHandle(h) { return Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'RouterRebootIntent'; },
-  handle() { return confirmation('Isso reiniciará o roteador e interromperá a Internet temporariamente. Diga confirmar reinício para continuar ou cancelar.', { type: 'reboot' }); }
+  handle() { if (!permitted('control', CONTROL_CAPABILITIES.reboot)) return response('O reinício remoto está desabilitado pela política da skill.'); return confirmation('Isso reiniciará o roteador e interromperá a Internet temporariamente. Diga confirmar reinício para continuar ou cancelar.', { type: 'reboot' }); }
 };
 const confirmationHandler = {
   canHandle(h) { return Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && ['ConfirmActionIntent', 'AMAZON.YesIntent'].includes(Alexa.getIntentName(h.requestEnvelope)); },
@@ -117,7 +160,20 @@ const helpHandler = {
   handle() { return response('Você pode perguntar como está a rede, Wi-Fi, VPN, WISP, DHCP ou dispositivos conectados. Também pode pedir o reinício ou ligar e desligar o Wi-Fi de convidados, com confirmação.'); }
 };
 const fallback = { canHandle() { return true; }, handle() { return response('Não entendi. Você pode pedir o status da rede.'); } };
-const skill = Alexa.SkillBuilders.custom().addRequestHandlers(launchHandler, networkStatus, detailStatus, guestControl, reboot, confirmationHandler, cancelHandler, helpHandler, fallback).create();
+const skillIdGuard = {
+  process(handlerInput) {
+    const received = handlerInput.requestEnvelope?.context?.System?.application?.applicationId
+      || handlerInput.requestEnvelope?.session?.application?.applicationId;
+    if (!ALEXA_SKILL_ID || received !== ALEXA_SKILL_ID) {
+      console.error('Rejected Alexa request with an unrecognized application ID');
+      throw new Error('Unauthorized Alexa application');
+    }
+  }
+};
+const skill = Alexa.SkillBuilders.custom()
+  .addRequestInterceptors(skillIdGuard)
+  .addRequestHandlers(launchHandler, networkStatus, detailStatus, protectedControl, guestControl, reboot, confirmationHandler, cancelHandler, helpHandler, fallback)
+  .create();
 const adapter = new ExpressAdapter(skill, true, true);
 const app = express();
 app.disable('x-powered-by');
