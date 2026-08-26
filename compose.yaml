@@ -15,6 +15,7 @@ services:
       TZ: ${TZ:-America/Sao_Paulo}
     volumes:
       - ${DATA_DIR:-/srv/home-automation}/homeassistant/config:/config
+      - ./custom_components/cudy:/config/custom_components/cudy:ro
       - /etc/localtime:/etc/localtime:ro
       - /run/dbus:/run/dbus:ro
     logging: *default-logging
