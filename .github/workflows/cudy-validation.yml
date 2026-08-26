@@ -1,0 +1,48 @@
+name: Cudy validation
+
+on:
+  pull_request:
+    paths:
+      - 'custom_components/cudy/**'
+      - 'services/cudy-alexa/**'
+      - 'tests/**'
+      - 'compose.yaml'
+      - '.github/workflows/cudy-validation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'custom_components/cudy/**'
+      - 'services/cudy-alexa/**'
+      - 'tests/**'
+      - 'compose.yaml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Python test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'homeassistant>=2026.8,<2026.9' pytest
+
+      - name: Python syntax
+        run: python -m compileall -q custom_components/cudy tests
+
+      - name: Cudy unit tests
+        run: pytest -q tests/test_cudy_client.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Alexa backend syntax
+        run: node --check services/cudy-alexa/app/server.js
+
+      - name: Compose validation
+        run: docker compose config -q
