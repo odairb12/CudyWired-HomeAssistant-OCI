@@ -150,8 +150,19 @@ class CudyClient:
 
     async def async_snapshot(self)->CudySnapshot:
         paths={'system':'/cgi-bin/luci/admin/system/status','lan':'/cgi-bin/luci/admin/network/lan/status','devices':'/cgi-bin/luci/admin/network/devices/status','devlist':'/cgi-bin/luci/admin/network/devices/devlist','wifi':'/cgi-bin/luci/admin/network/wireless/status','wisp':'/cgi-bin/luci/admin/network/wireless/wds/status','vpn':'/cgi-bin/luci/admin/network/vpn/status','guest':'/cgi-bin/luci/admin/network/wireless/guest'}
+        # These pages are not consistently present in Cudy firmware builds.  A
+        # redirect from an optional status page must not make the entire router
+        # unavailable to Home Assistant when the core pages are readable.
+        optional_paths = {'wisp', 'vpn'}
         raw={}
-        for key,path in paths.items(): raw[key]=await self.async_get(path)
+        for key,path in paths.items():
+            try:
+                raw[key]=await self.async_get(path)
+            except CudyError:
+                if key not in optional_paths:
+                    raise
+                _LOGGER.debug("Optional Cudy status page is unavailable: %s", key)
+                raw[key]=''
         txt={k:_text(v) for k,v in raw.items()}
         firmware=_match(txt['system'],[r'(?:Firmware|Versão do Firmware)\s*[:\-]?\s*([\w.\-]+(?:\s+US)?)'])
         self.firmware=firmware or self.firmware
@@ -251,3 +262,4 @@ class CudyClient:
             failed = [iface for iface in changed if verify.get(f'cbid.wireless.{iface}.disabled') != desired]
             if failed:
                 raise CudyApplyError(f'Guest state verification failed for: {", ".join(failed)}')
+
