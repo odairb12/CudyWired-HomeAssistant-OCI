@@ -1,5 +1,7 @@
 # Troubleshooting
 
+> Os endereços deste documento são exemplos mascarados. Use os valores reais apenas a partir do `.env` não versionado da OCI.
+
 ## Verificação geral
 
 ```bash
@@ -34,7 +36,7 @@ sudo iptables -L INPUT -n -v --line-numbers
 
 Imagens OCI podem ter uma regra final `REJECT`; o serviço systemd deste projeto insere as portas necessárias antes dela.
 
-## WireGuard tem handshake, mas 10.13.13.1 não responde
+## WireGuard tem handshake, mas o IP do servidor VPN não responde
 
 Como o WireGuard usa `network_mode: host`, não existem mais regras DNAT Docker para 22/8123/9443. Verifique se a interface `wg0` foi criada no host:
 
@@ -63,7 +65,7 @@ sudo docker logs --tail 100 wireguard
 sudo ss -lunp | grep 51820
 ```
 
-## WireGuard alcança o Cudy, mas OCI não alcança 192.168.10.x
+## WireGuard alcança o Cudy, mas OCI não alcança a LAN residencial
 
 Confirme primeiro os Allowed IPs:
 
@@ -71,17 +73,17 @@ Confirme primeiro os Allowed IPs:
 sudo docker exec wireguard wg show
 ```
 
-O peer deve conter:
+O peer deve conter o IP WireGuard do Cudy e a faixa definida por `HOME_LAN_CIDR`. Exemplo mascarado:
 
 ```text
-allowed ips: 10.13.13.2/32, 192.168.10.0/24
+allowed ips: 10.99.0.2/32, 192.168.50.0/24
 ```
 
-Depois confira a rota no host:
+Depois confira a rota no host usando os valores reais do seu ambiente:
 
 ```bash
-ip route show 192.168.10.0/24
-ip route get 192.168.10.1
+ip route show "$HOME_LAN_CIDR"
+ip route get IP_DO_CUDY_NA_LAN
 ```
 
 A rota deve usar `wg0`. Se aparecer o gateway padrão da OCI (`ens3`), confirme `HOME_LAN_CIDR` no `.env` e recrie somente o WireGuard:
@@ -90,15 +92,15 @@ A rota deve usar `wg0`. Se aparecer o gateway padrão da OCI (`ens3`), confirme 
 sudo docker compose up -d --force-recreate wireguard
 ```
 
-Valide:
+Valide com o IP real do Cudy na LAN:
 
 ```bash
-ping -c 3 192.168.10.1
+ping -c 3 IP_DO_CUDY_NA_LAN
 ```
 
 ## Acesso VPN não funciona do computador
 
-Confirme primeiro que o computador está realmente conectado à LAN/Wi-Fi do Cudy. O endereço `10.13.13.1` só será roteado conforme a política WireGuard do WR3000.
+Confirme primeiro que o computador está realmente conectado à LAN/Wi-Fi do Cudy. O endereço do servidor WireGuard só será roteado conforme a política WireGuard do WR3000.
 
 ## `wg0` não aparece no host
 
