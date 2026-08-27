@@ -38,7 +38,7 @@ cd CudyWired-HomeAssistant-OCI
 cp .env.example .env
 chmod 600 .env
 sudo ./scripts/setup-home.sh
-docker compose up -d --build
+sudo docker compose up -d --build
 sudo ./scripts/validate.sh
 ```
 
@@ -82,14 +82,44 @@ Consulte [`docs/SECURITY.md`](docs/SECURITY.md) para detalhes.
 | TCP 9443 | Portainer | fechada fora da VPN |
 | TCP 8000/9000 | Portainer legado | bloqueadas |
 
-## Atualização
+## Aplicação do hardening em uma VM existente
 
-Como o histórico deste repositório pode ser reescrito durante sanitizações de segurança, prefira um clone limpo quando houver aviso de reescrita. Em operação normal:
+Se a VM ainda usa um clone anterior à sanitização do histórico, não faça `git pull` nesse clone. Preserve o `.env` e os dados persistentes, faça um clone limpo e execute o setup a partir dele.
+
+Se a sessão atual for SSH pela Internet, antes do setup configure temporariamente no `.env`:
+
+```dotenv
+SSH_PUBLIC_CIDR=SEU_IP_PUBLICO/32
+```
+
+Depois de confirmar o acesso pelo WireGuard, remova `SSH_PUBLIC_CIDR` e execute novamente `sudo ./scripts/setup-home.sh` para fechar a exceção pública.
+
+Procedimento de migração:
+
+```bash
+cd /home/ubuntu
+sudo cp CudyWired-HomeAssistant-OCI/.env /root/home-automation.env.backup
+
+git clone https://github.com/odairb12/CudyWired-HomeAssistant-OCI.git CudyWired-HomeAssistant-OCI.hardened
+sudo cp /root/home-automation.env.backup CudyWired-HomeAssistant-OCI.hardened/.env
+sudo chmod 600 CudyWired-HomeAssistant-OCI.hardened/.env
+
+cd CudyWired-HomeAssistant-OCI.hardened
+sudo ./scripts/setup-home.sh
+sudo docker compose up -d --build
+sudo ./scripts/validate.sh --verbose
+```
+
+O diretório persistente `/srv/home-automation` não é substituído pelo clone novo. Mantenha o clone antigo até a validação terminar com sucesso.
+
+## Atualização normal
+
+Após a migração para o clone sanitizado:
 
 ```bash
 git pull
-docker compose pull
-docker compose up -d --build
+sudo docker compose pull
+sudo docker compose up -d --build
 sudo ./scripts/validate.sh
 ```
 
