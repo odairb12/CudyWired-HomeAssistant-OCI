@@ -2,7 +2,10 @@
 set -Eeuo pipefail
 
 CONFIG_FILE="/etc/home-automation/firewall.env"
-[[ -r "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
+if [[ -r "$CONFIG_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$CONFIG_FILE"
+fi
 
 WG_INTERFACE="${WG_INTERFACE:-wg0}"
 WG_SERVER_PORT="${WG_SERVER_PORT:-51820}"
