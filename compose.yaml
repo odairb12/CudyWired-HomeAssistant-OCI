@@ -1,8 +1,8 @@
 x-logging: &default-logging
   driver: json-file
   options:
-    max-size: "10m"
-    max-file: "3"
+    max-size: "5m"
+    max-file: "2"
 
 services:
   homeassistant:
@@ -11,6 +11,11 @@ services:
     network_mode: host
     restart: unless-stopped
     stop_grace_period: 90s
+    mem_limit: 550m
+    mem_reservation: 350m
+    mem_swappiness: 10
+    cpus: 0.60
+    oom_score_adj: 0
     security_opt:
       - no-new-privileges:true
     environment:
@@ -23,12 +28,15 @@ services:
     logging: *default-logging
 
   wireguard:
-    # LinuxServer publishes architecture-specific immutable version tags, but
-    # the portable multi-arch tag is latest. CI scans this image on each change.
     image: lscr.io/linuxserver/wireguard:latest
     container_name: wireguard
     network_mode: host
     restart: unless-stopped
+    mem_limit: 64m
+    mem_reservation: 32m
+    mem_swappiness: 20
+    cpus: 0.15
+    oom_score_adj: 50
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
@@ -59,7 +67,11 @@ services:
     security_opt:
       - no-new-privileges:true
     pids_limit: 128
-    mem_limit: 160m
+    mem_limit: 128m
+    mem_reservation: 64m
+    mem_swappiness: 20
+    cpus: 0.20
+    oom_score_adj: 100
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m
     env_file:
@@ -69,6 +81,7 @@ services:
       SCHEDULE_PATH: /data/guest-schedules.json
       TIME_ZONE: ${TZ:-America/Sao_Paulo}
       HA_TOKEN_FILE: /run/secrets/ha_token
+      NODE_OPTIONS: "--max-old-space-size=64"
     volumes:
       - ./services/cudy-alexa/policy.yaml:/app/policy.yaml:ro
       - ${DATA_DIR:-/srv/home-automation}/cudy-alexa/data:/data
@@ -90,7 +103,11 @@ services:
     security_opt:
       - no-new-privileges:true
     pids_limit: 128
-    mem_limit: 128m
+    mem_limit: 64m
+    mem_reservation: 32m
+    mem_swappiness: 20
+    cpus: 0.10
+    oom_score_adj: 150
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m
     environment:
@@ -109,6 +126,11 @@ services:
     container_name: portainer
     network_mode: host
     restart: unless-stopped
+    mem_limit: 96m
+    mem_reservation: 32m
+    mem_swappiness: 60
+    cpus: 0.10
+    oom_score_adj: 400
     command:
       - --http-disabled
       - --bind-https
@@ -125,6 +147,11 @@ services:
     container_name: mosquitto
     profiles: ["mqtt"]
     restart: unless-stopped
+    mem_limit: 96m
+    mem_reservation: 32m
+    mem_swappiness: 50
+    cpus: 0.10
+    oom_score_adj: 300
     read_only: true
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
@@ -141,6 +168,11 @@ services:
     container_name: nodered
     profiles: ["automation"]
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 64m
+    mem_swappiness: 60
+    cpus: 0.20
+    oom_score_adj: 350
     security_opt: ["no-new-privileges:true"]
     volumes:
       - ${DATA_DIR:-/srv/home-automation}/nodered/data:/data
@@ -151,6 +183,11 @@ services:
     container_name: esphome
     profiles: ["esphome"]
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 64m
+    mem_swappiness: 60
+    cpus: 0.20
+    oom_score_adj: 350
     security_opt: ["no-new-privileges:true"]
     volumes:
       - ${DATA_DIR:-/srv/home-automation}/esphome/config:/config
@@ -161,6 +198,11 @@ services:
     container_name: zigbee2mqtt
     profiles: ["zigbee"]
     restart: unless-stopped
+    mem_limit: 192m
+    mem_reservation: 48m
+    mem_swappiness: 60
+    cpus: 0.15
+    oom_score_adj: 350
     security_opt: ["no-new-privileges:true"]
     volumes:
       - ${DATA_DIR:-/srv/home-automation}/zigbee2mqtt/data:/app/data
