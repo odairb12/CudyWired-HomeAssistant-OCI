@@ -46,9 +46,9 @@ services:
       SERVERURL: ${WG_SERVER_URL:-auto}
       SERVERPORT: ${WG_SERVER_PORT:-51820}
       PEERS: ${WG_PEERS:-cudy}
-      INTERNAL_SUBNET: ${WG_INTERNAL_SUBNET:-10.13.13.0}
-      ALLOWEDIPS: ${WG_ALLOWED_IPS:-10.13.13.1/32}
-      SERVER_ALLOWEDIPS_PEER_cudy: ${HOME_LAN_CIDR:-192.168.10.0/24}
+      INTERNAL_SUBNET: ${WG_INTERNAL_SUBNET:-10.99.0.0}
+      ALLOWEDIPS: ${WG_ALLOWED_IPS:-10.99.0.1/32}
+      SERVER_ALLOWEDIPS_PEER_cudy: ${HOME_LAN_CIDR:-192.168.50.0/24}
       LOG_CONFS: "false"
     volumes:
       - ${DATA_DIR:-/srv/home-automation}/wireguard/config:/config
