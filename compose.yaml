@@ -20,17 +20,6 @@ services:
       - /run/dbus:/run/dbus:ro
     logging: *default-logging
 
-  portainer:
-    image: portainer/portainer-ce:lts
-    container_name: portainer
-    restart: unless-stopped
-    ports:
-      - "9443:9443"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ${DATA_DIR:-/srv/home-automation}/portainer/data:/data
-    logging: *default-logging
-
   wireguard:
     image: lscr.io/linuxserver/wireguard:latest
     container_name: wireguard
@@ -53,6 +42,51 @@ services:
     volumes:
       - ${DATA_DIR:-/srv/home-automation}/wireguard/config:/config
       - /lib/modules:/lib/modules:ro
+    logging: *default-logging
+
+  cudy-alexa:
+    build: ./services/cudy-alexa/app
+    container_name: cudy-alexa-app
+    network_mode: host
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POLICY_PATH: /app/policy.yaml
+      SCHEDULE_PATH: /data/guest-schedules.json
+      TIME_ZONE: ${TZ:-America/Sao_Paulo}
+    volumes:
+      - ./services/cudy-alexa/policy.yaml:/app/policy.yaml:ro
+      - ${DATA_DIR:-/srv/home-automation}/cudy-alexa/data:/data
+    depends_on:
+      - homeassistant
+    logging: *default-logging
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./services/cudy-alexa/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${DATA_DIR:-/srv/home-automation}/caddy/data:/data
+      - ${DATA_DIR:-/srv/home-automation}/caddy/config:/config
+    depends_on:
+      - cudy-alexa
+    logging: *default-logging
+
+  portainer:
+    image: portainer/portainer-ce:lts
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DATA_DIR:-/srv/home-automation}/portainer/data:/data
     logging: *default-logging
 
   mosquitto:
