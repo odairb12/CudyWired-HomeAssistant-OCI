@@ -4,6 +4,8 @@ Home Assistant em uma VM da **Oracle Cloud Infrastructure (OCI)**, executado em 
 
 A infraestrutura fica versionada no Git e os dados persistentes ficam fora do repositório em `/srv/home-automation`.
 
+> Os endereços IP e faixas mostrados neste README são exemplos mascarados. A topologia operacional real deve permanecer somente no `.env` não versionado do host.
+
 ## Estado validado
 
 - Ubuntu 24.04 Minimal;
@@ -13,10 +15,10 @@ A infraestrutura fica versionada no Git e os dados persistentes ficam fora do re
 - Portainer CE;
 - WireGuard em Docker com `network_mode: host`;
 - Cudy WR3000 como cliente WireGuard;
-- VPN `10.13.13.0/24`;
-- LAN residencial `192.168.10.0/24` roteada pelo peer Cudy;
-- Home Assistant acessível pela rede do Cudy em `http://10.13.13.1:8123`;
-- OCI e Home Assistant alcançando dispositivos reais da LAN residencial;
+- VPN de exemplo `10.99.0.0/24`;
+- LAN de exemplo `192.168.50.0/24` roteada pelo peer Cudy;
+- Home Assistant acessível pela VPN no endereço de exemplo `http://10.99.0.1:8123`;
+- OCI e Home Assistant alcançando dispositivos da LAN residencial;
 - Internet residencial continuando pela WAN normal do Cudy através de split tunnel.
 
 ## Arquitetura
@@ -36,7 +38,7 @@ A infraestrutura fica versionada no Git e os dados persistentes ficam fora do re
                 +------------------+------------------+
                 |                  |                  |
              ens3                wg0             Docker Engine
-          OCI network         10.13.13.1              |
+          OCI network         10.99.0.1               |
                                    |          +--------+--------+
                                    |          |        |        |
                                    |         HA    Portainer  WireGuard
@@ -45,22 +47,22 @@ A infraestrutura fica versionada no Git e os dados persistentes ficam fora do re
                              WireGuard VPN
                                    |
                             Cudy WR3000
-                            10.13.13.2
+                            10.99.0.2
                                    |
-                         192.168.10.0/24
+                         192.168.50.0/24
                                    |
                             dispositivos LAN
 ```
 
-O WireGuard e o Home Assistant usam a rede do host. Assim, `wg0` existe diretamente no Ubuntu e o Home Assistant consegue acessar `192.168.10.x` sem DNAT entre namespaces Docker.
+O WireGuard e o Home Assistant usam a rede do host. Assim, `wg0` existe diretamente no Ubuntu e o Home Assistant consegue acessar a LAN residencial sem DNAT entre namespaces Docker.
 
-Pela VPN:
+Pela VPN, usando a faixa de exemplo:
 
 | Serviço | Endereço |
 |---|---|
-| Home Assistant | `http://10.13.13.1:8123` |
-| SSH | `ssh ubuntu@10.13.13.1` |
-| Portainer | `https://10.13.13.1:9443` |
+| Home Assistant | `http://10.99.0.1:8123` |
+| SSH | `ssh SEU_USUARIO@10.99.0.1` |
+| Portainer | `https://10.99.0.1:9443` |
 
 ## Estrutura do repositório
 
@@ -139,7 +141,7 @@ cp .env.example .env
 chmod +x scripts/*.sh
 ```
 
-Padrões:
+Exemplo mascarado:
 
 ```dotenv
 DATA_DIR=/srv/home-automation
@@ -147,12 +149,12 @@ TZ=America/Sao_Paulo
 WG_SERVER_URL=auto
 WG_SERVER_PORT=51820
 WG_PEERS=cudy
-WG_INTERNAL_SUBNET=10.13.13.0
-WG_ALLOWED_IPS=10.13.13.1/32
-HOME_LAN_CIDR=192.168.10.0/24
+WG_INTERNAL_SUBNET=10.99.0.0
+WG_ALLOWED_IPS=10.99.0.1/32
+HOME_LAN_CIDR=192.168.50.0/24
 ```
 
-`WG_ALLOWED_IPS=10.13.13.1/32` mantém split tunnel no peer. `HOME_LAN_CIDR` informa ao servidor WireGuard que a LAN residencial está atrás do Cudy.
+Substitua as faixas de exemplo pelas faixas reais apenas no `.env` local. `WG_ALLOWED_IPS` mantém split tunnel no peer e `HOME_LAN_CIDR` informa ao servidor WireGuard qual LAN está atrás do Cudy.
 
 ### 4. Provisionar
 
@@ -220,7 +222,7 @@ Importe o arquivo em:
 Configurações -> VPN -> WireGuard
 ```
 
-Depois configure o WR3000 assim:
+Depois configure o WR3000 usando as faixas definidas no seu `.env`. Exemplo mascarado:
 
 ```text
 Ativar:         Sim
@@ -231,7 +233,7 @@ Política VPN:   Sub-rede remota
 
 Sub-rede remota:
 Regra:          Permitir somente os listados
-Endereço IP:    10.13.13.0
+Endereço IP:    10.99.0.0
 Máscara:        255.255.255.0
 ```
 
@@ -240,7 +242,7 @@ Essa política é importante. No firmware testado, deixar a política VPN desati
 O comportamento correto é:
 
 ```text
-10.13.13.0/24 -> WireGuard -> OCI
+FAIXA_WIREGUARD -> WireGuard -> OCI
 outros destinos -> WAN normal do Cudy
 ```
 
@@ -250,11 +252,7 @@ Confirme também o peer gerado:
 sudo grep -E '^AllowedIPs' /srv/home-automation/wireguard/config/peer_cudy/peer_cudy.conf
 ```
 
-Esperado:
-
-```text
-AllowedIPs = 10.13.13.1/32
-```
+O valor deve corresponder ao `WG_ALLOWED_IPS` definido no `.env`.
 
 Valide o servidor:
 
@@ -262,41 +260,35 @@ Valide o servidor:
 sudo docker exec wireguard wg show
 ```
 
-O peer deve mostrar:
+O peer deve mostrar as faixas configuradas no seu ambiente, além de handshake e tráfego recentes.
 
-```text
-allowed ips: 10.13.13.2/32, 192.168.10.0/24
-latest handshake: ...
-transfer: ... received, ... sent
-```
-
-Valide as rotas:
+Valide as rotas usando os IPs reais do seu `.env` e da sua LAN:
 
 ```bash
 ip addr show wg0
-ip route show 192.168.10.0/24
-ip route get 192.168.10.211
+ip route show "$HOME_LAN_CIDR"
+ip route get IP_DE_UM_DISPOSITIVO_LAN
 ```
 
-O resultado deve usar `dev wg0`.
+A rota deve usar `dev wg0`.
 
 Depois teste um dispositivo real:
 
 ```bash
-ping -c 3 192.168.10.211
+ping -c 3 IP_DE_UM_DISPOSITIVO_LAN
 ```
 
 E confirme que o Home Assistant enxerga a mesma rota:
 
 ```bash
-sudo docker exec homeassistant ip route get 192.168.10.211
+sudo docker exec homeassistant ip route get IP_DE_UM_DISPOSITIVO_LAN
 ```
 
 Por fim, conectado ao Cudy, valide simultaneamente:
 
 ```text
 Internet normal pela WAN        OK
-http://10.13.13.1:8123          OK
+Home Assistant pela VPN         OK
 ```
 
 Veja o procedimento detalhado em [`docs/CUDY.md`](docs/CUDY.md).
