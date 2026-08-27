@@ -30,7 +30,7 @@ em vez de `0.0.0.0/0`.
 
 ## Exceção pública: Custom Skill Alexa
 
-A Custom Skill usa `https://home-d20.duckdns.org/alexa`. O Caddy expõe somente TCP 80/443 para emitir/renovar o certificado e receber requisições autenticadas da Alexa. O serviço de aplicação escuta exclusivamente em `127.0.0.1:3000` e acessa o Cudy pela WireGuard.
+A Custom Skill usa `https://SEU-DOMINIO/alexa`. O domínio real fica apenas no `.env` do host OCI, através de `PUBLIC_HOSTNAME`, e não deve ser versionado. O Caddy expõe somente TCP 80/443 para emitir/renovar o certificado e receber requisições autenticadas da Alexa. O serviço de aplicação escuta exclusivamente em `127.0.0.1:3000` e acessa o Cudy pela WireGuard.
 
 Não use estas portas para publicar LuCI, Home Assistant ou Portainer.
 
@@ -46,9 +46,10 @@ Nunca faça commit de:
 - chaves SSH privadas;
 - chaves WireGuard;
 - backups de `/srv/home-automation`;
-- `.env` caso futuramente passe a conter segredo.
+- `.env` caso futuramente passe a conter segredo;
+- hostname público real, e-mail ACME ou topologia/IPs operacionais quando não forem necessários ao código.
 
-O repositório mantém apenas `.env.example`.
+O repositório mantém apenas exemplos mascarados em `.env.example`.
 
 ## Portainer
 
