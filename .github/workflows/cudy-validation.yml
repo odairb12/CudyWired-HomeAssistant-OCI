@@ -64,4 +64,4 @@ jobs:
             -e PUBLIC_HOSTNAME=router.example.invalid \
             -e ACME_EMAIL=admin@example.invalid \
             -v "$PWD/services/cudy-alexa/Caddyfile:/etc/caddy/Caddyfile:ro" \
-            caddy:2.11.3-alpine validate --config /etc/caddy/Caddyfile
+            caddy:2.11.3-alpine caddy validate --config /etc/caddy/Caddyfile
