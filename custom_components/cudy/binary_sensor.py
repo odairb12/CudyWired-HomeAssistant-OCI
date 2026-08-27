@@ -10,6 +10,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
         [
             CudyBinarySensor(coordinator, entry.entry_id, "wisp_connected", "WISP"),
             CudyBinarySensor(coordinator, entry.entry_id, "vpn_connected", "VPN"),
+            CudyBinarySensor(coordinator, entry.entry_id, "lan_enabled", "LAN"),
+            CudyBinarySensor(coordinator, entry.entry_id, "wifi_24_enabled", "Wi-Fi 2.4 GHz"),
+            CudyBinarySensor(coordinator, entry.entry_id, "wifi_5_enabled", "Wi-Fi 5 GHz"),
+            CudyBinarySensor(coordinator, entry.entry_id, "mesh_active", "Mesh"),
+            CudyBinarySensor(coordinator, entry.entry_id, "dhcp_enabled", "DHCP"),
         ]
     )
 

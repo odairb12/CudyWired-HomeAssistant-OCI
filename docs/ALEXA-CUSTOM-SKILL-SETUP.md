@@ -1,6 +1,6 @@
 # Configuração da Alexa Custom Skill
 
-Este guia configura a Skill privada que consulta o Cudy pela OCI através do WireGuard. Ela não depende de Home Assistant, Nabu Casa ou de uma Smart Home Skill.
+Este guia configura a Skill privada que consulta e controla o Cudy pela integração do Home Assistant na OCI, através do WireGuard. Ela não depende de Nabu Casa nem de uma Smart Home Skill.
 
 ## Pré-requisitos
 
@@ -18,7 +18,7 @@ Este guia configura a Skill privada que consulta o Cudy pela OCI através do Wir
 4. Idioma principal: **Portuguese (BR)**.
 5. Tipo: **Custom**; modelo: **Provision your own**; método: **Start from scratch**.
 6. Em **Build > Invocation**, informe `meu roteador`. Salve.
-7. Em **Interaction Model > Intents**, crie/importe os intents do serviço. Mantenha os built-ins `AMAZON.HelpIntent`, `AMAZON.CancelIntent`, `AMAZON.StopIntent` e `AMAZON.FallbackIntent`.
+7. Em **Interaction Model > JSON Editor**, importe o arquivo `services/cudy-alexa/alexa/pt-BR.json` e clique em **Save Model**.
 8. Em **Endpoint**, selecione **HTTPS**, com certificado de autoridade certificadora confiável, e use `https://SEU-DOMINIO/alexa`.
 9. Clique em **Build skill**.
 10. Em **Test**, selecione **Development**.
@@ -48,27 +48,31 @@ O backend valida assinatura, timestamp e Application ID antes de processar `POST
 
 - “Alexa, abrir meu roteador.”
 - “Alexa, perguntar ao meu roteador como está a rede.”
-- “Alexa, perguntar ao meu roteador qual é o status do Wi-Fi.”
-- “Alexa, pedir ao meu roteador para ligar a rede de convidados.” (somente quando a operação estiver implementada e habilitada pela política)
-- “Alexa, pedir ao meu roteador para reiniciar.” (idem)
+- “Alexa, perguntar ao meu roteador se há algum serviço indisponível.”
+- “Alexa, abrir meu roteador”; depois: “ligar a rede de convidados”; “duas horas”; “pode fazer”.
+- “Alexa, perguntar ao meu roteador quando a rede de convidados desliga.”
+- “Alexa, pedir ao meu roteador para cancelar o agendamento dos convidados.”
+- “Alexa, pedir ao meu roteador para reiniciar.”
+
+Ao ligar a rede de convidados, um prazo é obrigatório. O backend aceita de um minuto a 24 horas, mantém no máximo três agendamentos simultâneos e persiste os temporizadores no volume Docker `cudy_alexa_data`. Uma confirmação explícita é exigida antes de ligar, desligar, cancelar agendas ou reiniciar.
 
 ## Política de operações
 
-`services/cudy-alexa/policy.yaml` define as capacidades de leitura e escrita. A política atual pode permitir apenas rede de convidados e reboot, mas **permitir na política não executa uma alteração no roteador**: cada operação de escrita precisa de uma implementação autenticada, testes no firmware Cudy e confirmação por voz.
+`services/cudy-alexa/policy.yaml` define as capacidades de leitura e escrita. Atualmente, somente o controle da rede de convidados e o reboot estão habilitados. Reset de fábrica, firmware e outras mudanças de configuração continuam bloqueados.
 
 Não exponha por voz reset de fábrica, firmware, WAN/WISP/VPN, firewall, logs ou alteração de configuração até que cada ação tenha desenho, autorização e rollback próprios.
 
 ## Segurança e diagnóstico
 
 - O Caddy publica somente `GET /health` e `POST /alexa`; os demais caminhos respondem 404.
-- `/status` é local à OCI e serve apenas para diagnóstico.
+- `/health` informa apenas a saúde do backend e do Home Assistant, sem expor dados do roteador.
 - Não versione `.env`, senhas Cudy, chaves SSH, chaves WireGuard, cookies ou o Application ID real.
 - Para investigar uma falha:
 
 ```bash
 cd /home/ubuntu/cudy-alexa
 docker compose logs --tail=100 app
-curl http://127.0.0.1:3000/status
+curl http://127.0.0.1:3000/health
 ```
 
-O conector trata nova autenticação quando o Cudy devolve redirecionamento de sessão. As leituras do panorama de rede são serializadas para reduzir disputa pela sessão do roteador.
+O check-up consulta Internet/WISP, VPN, LAN, Wi-Fi 2,4 GHz, Wi-Fi 5 GHz, Mesh e DHCP. Estado `unknown` é informado como não verificado, nunca como falha confirmada.
