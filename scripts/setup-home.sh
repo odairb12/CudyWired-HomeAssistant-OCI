@@ -34,6 +34,7 @@ set +a
 
 DATA_DIR="${DATA_DIR:-$DATA_DIR_DEFAULT}"
 TZ="${TZ:-America/Sao_Paulo}"
+WG_SERVER_IP="${WG_ALLOWED_IPS%%/*}"
 
 log "[1/10] System packages"
 apt-get update
@@ -133,9 +134,9 @@ fi
 
 CUDY_CONFIG="$DATA_DIR/wireguard/config/peer_cudy/peer_cudy.conf"
 printf '\n============================================================\nSETUP COMPLETE\n============================================================\n'
-echo "Home Assistant via VPN: http://10.13.13.1:8123"
-echo "SSH via VPN:            ssh ubuntu@10.13.13.1"
-echo "Portainer via VPN:      https://10.13.13.1:9443"
+echo "Home Assistant via VPN: http://${WG_SERVER_IP}:8123"
+echo "SSH via VPN:            ssh <usuario>@${WG_SERVER_IP}"
+echo "Portainer via VPN:      https://${WG_SERVER_IP}:9443"
 echo "WireGuard public port:  UDP/${WG_SERVER_PORT:-51820}"
 echo "Persistent data:        $DATA_DIR"
 echo
