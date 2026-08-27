@@ -1,0 +1,12 @@
+[Unit]
+Description=Home Automation host firewall rules
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/home-automation-firewall
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

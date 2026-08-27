@@ -1,0 +1,22 @@
+services:
+  app:
+    env_file: .env
+    build: ./app
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./policy.yaml:/app/policy.yaml:ro
+      - cudy_alexa_data:/data
+  caddy:
+    image: caddy:2-alpine
+    env_file: .env
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  cudy_alexa_data:
+  caddy_data:
+  caddy_config:
