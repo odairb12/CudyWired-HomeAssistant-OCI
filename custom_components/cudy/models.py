@@ -25,6 +25,11 @@ class CudySnapshot:
     wisp_signal: int | None = None
     vpn_connected: bool | None = None
     vpn_protocol: str | None = None
+    lan_enabled: bool | None = None
+    wifi_24_enabled: bool | None = None
+    wifi_5_enabled: bool | None = None
+    mesh_active: bool | None = None
+    dhcp_enabled: bool | None = None
     guest_24: bool | None = None
     guest_5: bool | None = None
     clients: list[CudyClientDevice] = field(default_factory=list)

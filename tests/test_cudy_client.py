@@ -3,7 +3,9 @@ import pytest
 from custom_components.cudy.client import (
     CudyClient,
     CudyUnsupportedFirmware,
+    _match,
     _form_fields,
+    _bool_status,
     _sha,
 )
 
@@ -42,6 +44,20 @@ def test_write_requires_confirmed_firmware():
     client._assert_write_supported()
 
 
+def test_firmware_version_label_extracts_semantic_version():
+    assert _match("Firmware Version 2.4.19-20250828-192837", [r"\b(\d+\.\d+\.\d+(?:-[\w.\-]+)?)\b"]) == "2.4.19-20250828-192837"
+
+
 def test_host_without_scheme_is_normalized():
     client = CudyClient("192.168.10.1", "admin", "secret", False)
     assert client.base == "http://192.168.10.1"
+
+
+@pytest.mark.parametrize("text", ["Status Connected", "Status Enabled", "Status SOLE", "Status Ativo"])
+def test_operational_status_is_true(text):
+    assert _bool_status(text) is True
+
+
+@pytest.mark.parametrize("text", ["Status Disconnected", "Status Disabled", "Status Inativo"])
+def test_operational_status_is_false(text):
+    assert _bool_status(text) is False

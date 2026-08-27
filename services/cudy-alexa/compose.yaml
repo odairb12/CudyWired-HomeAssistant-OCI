@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./policy.yaml:/app/policy.yaml:ro
+      - cudy_alexa_data:/data
   caddy:
     image: caddy:2-alpine
     network_mode: host
@@ -15,5 +16,6 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 volumes:
+  cudy_alexa_data:
   caddy_data:
   caddy_config:

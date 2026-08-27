@@ -1,1 +1,162 @@
-{"interactionModel":{"languageModel":{"invocationName":"status da rede","intents":[{"name":"NetworkStatusIntent","samples":["como está a rede","status da rede","como está minha internet"]},{"name":"NetworkDetailIntent","slots":[{"name":"Category","type":"NETWORK_CATEGORY"}],"samples":["qual o status de {Category}","como está {Category}","me diga sobre {Category}"]},{"name":"GuestWifiControlIntent","slots":[{"name":"Action","type":"GUEST_ACTION"},{"name":"Band","type":"GUEST_BAND"}],"samples":["{Action} rede de convidados","{Action} wifi de convidados","{Action} convidados em {Band}"]},{"name":"RouterRebootIntent","samples":["reiniciar o roteador","reinicie o roteador","dar reboot no roteador","reiniciar a rede"]},{"name":"ConfirmActionIntent","samples":["confirmar","confirmo","pode executar"]},{"name":"CancelActionIntent","samples":["cancelar operação","não executar"]},{"name":"AMAZON.YesIntent","samples":[]},{"name":"AMAZON.NoIntent","samples":[]},{"name":"AMAZON.HelpIntent","samples":[]},{"name":"AMAZON.CancelIntent","samples":[]},{"name":"AMAZON.StopIntent","samples":[]}],"types":[{"name":"NETWORK_CATEGORY","values":[{"name":{"value":"sistema"}},{"name":{"value":"lan"}},{"name":{"value":"dispositivos"}},{"name":{"value":"wifi"}},{"name":{"value":"convidados"}},{"name":{"value":"wisp"}},{"name":{"value":"vpn"}},{"name":{"value":"dhcp"}},{"name":{"value":"mesh"}},{"name":{"value":"rotas"}},{"name":{"value":"interfaces"}},{"name":{"value":"arp"}}]},{"name":"GUEST_ACTION","values":[{"name":{"value":"ligar"}},{"name":{"value":"desligar"}}]},{"name":"GUEST_BAND","values":[{"name":{"value":"2.4"}},{"name":{"value":"5"}},{"name":{"value":"todas"}}]}]}}}
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "meu roteador",
+      "intents": [
+        {
+          "name": "NetworkStatusIntent",
+          "samples": [
+            "como está a rede",
+            "qual o status da rede",
+            "como está minha internet",
+            "me diga o status da rede"
+          ]
+        },
+        {
+          "name": "NetworkHealthIntent",
+          "samples": [
+            "faça um check-up da rede",
+            "faça um diagnóstico da rede",
+            "tem algum serviço indisponível",
+            "há algum problema na rede",
+            "está tudo funcionando",
+            "verifique todos os serviços",
+            "qual serviço está fora"
+          ]
+        },
+        {
+          "name": "NetworkDetailIntent",
+          "slots": [{ "name": "Category", "type": "NETWORK_CATEGORY" }],
+          "samples": [
+            "qual o status de {Category}",
+            "como está {Category}",
+            "me diga sobre {Category}"
+          ]
+        },
+        {
+          "name": "GuestWifiControlIntent",
+          "slots": [
+            { "name": "Action", "type": "GUEST_ACTION" },
+            { "name": "Band", "type": "GUEST_BAND" }
+          ],
+          "samples": [
+            "{Action} a rede de convidados",
+            "{Action} a rede de visitantes",
+            "{Action} o wi-fi de convidados",
+            "{Action} convidados em {Band}",
+            "{Action} a rede de convidados em {Band}"
+          ]
+        },
+        {
+          "name": "GuestWifiTimedIntent",
+          "slots": [
+            { "name": "Duration", "type": "AMAZON.DURATION" },
+            { "name": "Band", "type": "GUEST_BAND" }
+          ],
+          "samples": [
+            "ligar a rede de convidados por {Duration}",
+            "ativar a rede de visitantes por {Duration}",
+            "habilitar o wi-fi de convidados por {Duration}",
+            "deixar a rede de convidados ligada por {Duration}",
+            "ligar a rede de convidados em {Band} por {Duration}"
+          ]
+        },
+        {
+          "name": "GuestDurationIntent",
+          "slots": [{ "name": "Duration", "type": "AMAZON.DURATION" }],
+          "samples": [
+            "{Duration}",
+            "por {Duration}",
+            "durante {Duration}",
+            "deixe por {Duration}"
+          ]
+        },
+        {
+          "name": "GuestScheduleStatusIntent",
+          "samples": [
+            "quando a rede de convidados desliga",
+            "quanto tempo falta para desligar os convidados",
+            "quais são os agendamentos da rede de convidados",
+            "consultar os agendamentos dos convidados",
+            "até que horas a rede de visitantes fica ligada"
+          ]
+        },
+        {
+          "name": "GuestScheduleCancelIntent",
+          "samples": [
+            "cancelar o agendamento da rede de convidados",
+            "cancelar os agendamentos dos convidados",
+            "cancelar o desligamento programado",
+            "remover o agendamento da rede de visitantes"
+          ]
+        },
+        {
+          "name": "RouterRebootIntent",
+          "samples": [
+            "reiniciar o roteador",
+            "reinicie o roteador",
+            "dar reboot no roteador",
+            "reiniciar a rede"
+          ]
+        },
+        {
+          "name": "ConfirmActionIntent",
+          "samples": [
+            "confirmar",
+            "confirmo",
+            "pode executar",
+            "pode fazer",
+            "pode ligar",
+            "sim pode fazer",
+            "está confirmado"
+          ]
+        },
+        {
+          "name": "CancelActionIntent",
+          "samples": [
+            "cancelar operação",
+            "não executar",
+            "deixa pra lá",
+            "não pode fazer"
+          ]
+        },
+        { "name": "AMAZON.YesIntent", "samples": [] },
+        { "name": "AMAZON.NoIntent", "samples": [] },
+        { "name": "AMAZON.HelpIntent", "samples": [] },
+        { "name": "AMAZON.CancelIntent", "samples": [] },
+        { "name": "AMAZON.StopIntent", "samples": [] }
+      ],
+      "types": [
+        {
+          "name": "NETWORK_CATEGORY",
+          "values": [
+            { "name": { "value": "sistema" } },
+            { "name": { "value": "lan" } },
+            { "name": { "value": "dispositivos" } },
+            { "name": { "value": "wifi", "synonyms": ["wi-fi"] } },
+            { "name": { "value": "convidados", "synonyms": ["visitantes"] } },
+            { "name": { "value": "wisp" } },
+            { "name": { "value": "vpn" } },
+            { "name": { "value": "dhcp" } },
+            { "name": { "value": "mesh" } }
+          ]
+        },
+        {
+          "name": "GUEST_ACTION",
+          "values": [
+            { "name": { "value": "ligar", "synonyms": ["ativar", "habilitar"] } },
+            { "name": { "value": "desligar", "synonyms": ["desativar"] } }
+          ]
+        },
+        {
+          "name": "GUEST_BAND",
+          "values": [
+            { "name": { "value": "2.4", "synonyms": ["dois ponto quatro", "dois vírgula quatro"] } },
+            { "name": { "value": "5", "synonyms": ["cinco"] } },
+            { "name": { "value": "todas", "synonyms": ["ambas", "as duas"] } }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -71,8 +71,8 @@ def _match(text: str, patterns: list[str]):
 
 def _bool_status(text: str):
     low = text.lower()
-    if re.search(r'\b(disconnected|desconectado|offline|down|inactive|inativo)\b', low): return False
-    if re.search(r'\b(connected|conectado|online|up|active|ativo)\b', low): return True
+    if re.search(r'\b(disconnected|desconectado|disabled|desabilitado|offline|down|inactive|inativo)\b', low): return False
+    if re.search(r'\b(connected|conectado|enabled|habilitado|online|up|active|ativo|sole)\b', low): return True
     return None
 
 class CudyClient:
@@ -149,11 +149,42 @@ class CudyClient:
             if self.session: self.session.cookie_jar.clear()
 
     async def async_snapshot(self)->CudySnapshot:
-        paths={'system':'/cgi-bin/luci/admin/system/status','lan':'/cgi-bin/luci/admin/network/lan/status','devices':'/cgi-bin/luci/admin/network/devices/status','devlist':'/cgi-bin/luci/admin/network/devices/devlist','wifi':'/cgi-bin/luci/admin/network/wireless/status','wisp':'/cgi-bin/luci/admin/network/wireless/wds/status','vpn':'/cgi-bin/luci/admin/network/vpn/status','guest':'/cgi-bin/luci/admin/network/wireless/guest'}
+        paths={
+            'system':'/cgi-bin/luci/admin/system/status',
+            'lan':'/cgi-bin/luci/admin/network/lan/status',
+            'devices':'/cgi-bin/luci/admin/network/devices/status',
+            'devlist':'/cgi-bin/luci/admin/network/devices/devlist',
+            'wifi24':'/cgi-bin/luci/admin/network/wireless/status?iface=wlan00',
+            'wifi5':'/cgi-bin/luci/admin/network/wireless/status?iface=wlan10',
+            'wisp':'/cgi-bin/luci/admin/network/wireless/wds/status?wisp=',
+            # The generic VPN status URL redirects to the active client type.
+            # This firmware treats any 302 similarly to an expired session, so
+            # use the resolved WireGuard status endpoint directly.
+            'vpn':'/cgi-bin/luci/admin/network/vpn/wireguard/status',
+            'mesh':'/cgi-bin/luci/admin/network/mesh/status',
+            'dhcp':'/cgi-bin/luci/admin/services/dhcp/status',
+            'guest':'/cgi-bin/luci/admin/network/wireless/guest',
+        }
+        # These pages are not consistently present in Cudy firmware builds.  A
+        # redirect from an optional status page must not make the entire router
+        # unavailable to Home Assistant when the core pages are readable.
+        optional_paths = {'wisp', 'vpn', 'mesh', 'dhcp', 'wifi24', 'wifi5'}
         raw={}
-        for key,path in paths.items(): raw[key]=await self.async_get(path)
+        for key,path in paths.items():
+            try:
+                raw[key]=await self.async_get(path)
+            except CudyError:
+                if key not in optional_paths:
+                    raise
+                _LOGGER.debug("Optional Cudy status page is unavailable: %s", key)
+                raw[key]=''
         txt={k:_text(v) for k,v in raw.items()}
-        firmware=_match(txt['system'],[r'(?:Firmware|Versão do Firmware)\s*[:\-]?\s*([\w.\-]+(?:\s+US)?)'])
+        # Some Cudy LuCI pages render the label as "Firmware Version".  The
+        # previous generic expression captured the word "Version" itself,
+        # which safely blocked writes even on the supported WR3000 firmware.
+        # Prefer an actual semantic version wherever it appears in the system
+        # status text, then retain the label-based variants for other builds.
+        firmware=_match(txt['system'],[r'\b(\d+\.\d+\.\d+(?:-[\w.\-]+)?)\b',r'(?:Firmware|Versão do Firmware)\s*[:\-]?\s*([\w.\-]+(?:\s+US)?)'])
         self.firmware=firmware or self.firmware
         clients=self._parse_clients(raw['devlist'])
         guest=_form_fields(raw['guest'])
@@ -161,7 +192,26 @@ class CudyClient:
             value=guest.get(f'cbid.wireless.{iface}.disabled'); return None if value is None else value!='1'
         signal=_match(txt['wisp'],[r'(?:Signal|Sinal)\s*[:\-]?\s*(-?\d+)'])
         count=_match(txt['devices'],[r'(?:Clients|Clientes|Devices|Dispositivos)[^0-9]{0,30}(\d+)'])
-        return CudySnapshot(uptime=_match(txt['system'],[r'(?:Uptime|Tempo de atividade)\s*[:\-]?\s*([^|]+?)(?=\s{2,}|Firmware|$)']),firmware=firmware,lan_ip=_match(txt['lan'],[r'(?:IPv4|IP Address|Endereço IP)\s*[:\-]?\s*(\d+\.\d+\.\d+\.\d+)']),wifi_channel=_match(txt['wifi'],[r'(?:Channel|Canal)\s*[:\-]?\s*(\d+)']),connected_clients=int(count) if count else len(clients),wisp_connected=_bool_status(txt['wisp']),wisp_signal=int(signal) if signal else None,vpn_connected=_bool_status(txt['vpn']),vpn_protocol=_match(txt['vpn'],[r'(WireGuard|OpenVPN|PPTP|L2TP)']),guest_24=guest_state('wlan02'),guest_5=guest_state('wlan12'),clients=clients,raw={})
+        return CudySnapshot(
+            uptime=_match(txt['system'],[r'(?:Uptime|Tempo de atividade)\s*[:\-]?\s*([^|]+?)(?=\s{2,}|Firmware|$)']),
+            firmware=firmware,
+            lan_ip=_match(txt['lan'],[r'(?:IPv4|IP Address|Endereço IP)\s*[:\-]?\s*(\d+\.\d+\.\d+\.\d+)']),
+            wifi_channel=_match(txt['wifi24'],[r'(?:Channel|Canal)\s*[:\-]?\s*(\d+)']),
+            connected_clients=int(count) if count else len(clients),
+            wisp_connected=_bool_status(txt['wisp']),
+            wisp_signal=int(signal) if signal else None,
+            vpn_connected=_bool_status(txt['vpn']),
+            vpn_protocol=_match(txt['vpn'],[r'(WireGuard|OpenVPN|PPTP|L2TP)']),
+            lan_enabled=_bool_status(txt['lan']),
+            wifi_24_enabled=_bool_status(txt['wifi24']),
+            wifi_5_enabled=_bool_status(txt['wifi5']),
+            mesh_active=_bool_status(txt['mesh']),
+            dhcp_enabled=_bool_status(txt['dhcp']),
+            guest_24=guest_state('wlan02'),
+            guest_5=guest_state('wlan12'),
+            clients=clients,
+            raw={},
+        )
 
     def _parse_clients(self,doc:str):
         devices=[]; seen=set()
@@ -221,33 +271,59 @@ class CudyClient:
                     raise CudyApplyError(f'Refusing to enable open guest network on {iface}')
                 changed.append(iface)
 
-            if not changed:
-                return
+            # Always run Cudy's native apply phase for an explicit user
+            # operation. The form can already contain the target value while
+            # the wireless service is still advertising the old state.
+            _LOGGER.info(
+                "Cudy guest apply requested: enabled=%s interfaces=%s changed=%s",
+                enabled,
+                ",".join(ifaces),
+                ",".join(changed) or "none",
+            )
 
             fields['timeclock'] = str(int(time.time()))
             fields['cbi.submit'] = '1'
+            # The Cudy LuCI form applies guest/firewall changes only when the
+            # Save & Apply button is submitted.  Calling servicectl separately
+            # is not compatible with this firmware (GET is 405 and POST
+            # redirects), so use the form's native apply transaction.
+            # Browser submits the button without a value; only its presence
+            # matters to LuCI.
+            fields['cbi.apply'] = ''
             for iface in changed:
                 fields[f'cbi.cbe.wireless.{iface}.disabled'] = '1'
                 fields[f'cbid.wireless.{iface}.disabled'] = desired
 
             try:
-                await self._request('POST','/cgi-bin/luci/admin/network/wireless/guest',data=fields,retry_get=False)
+                apply_modal = await self._request('POST','/cgi-bin/luci/admin/network/wireless/guest',data=fields,retry_get=False)
             except CudySessionExpired:
                 await self.async_login(force=True)
-                check = _form_fields(await self.async_get('/cgi-bin/luci/admin/network/wireless/guest'))
-                if all(check.get(f'cbid.wireless.{iface}.disabled') == desired for iface in changed):
-                    return
-                raise CudyApplyError('Session expired during multi-band write; final state is ambiguous')
+                raise CudyApplyError('Session expired while opening the guest apply dialog; retry the operation')
 
-            await self._request('GET','/cgi-bin/luci/admin/servicectl/restart/guest,firewall',retry_get=False)
+            # Cudy's Save & Apply response is a modal whose JavaScript posts a
+            # short-lived token to servicectl. Reproduce that exact request;
+            # calling servicectl without this token returns HTTP 403.
+            match = re.search(
+                r"\$\.post\(\s*['\"](?P<path>/cgi-bin/luci/admin/servicectl/restart/guest,firewall)['\"]\s*,\s*\{\s*token\s*:\s*['\"](?P<token>[^'\"]+)",
+                apply_modal,
+                re.I | re.S,
+            )
+            if not match:
+                raise CudyApplyError('Guest apply token missing from Cudy response')
+            await self._request('POST', match.group('path'), data={'token': match.group('token')}, retry_get=False)
+            _LOGGER.info("Cudy guest apply started: interfaces=%s", ",".join(ifaces))
+
             for _ in range(30):
-                if 'finish' in _text(await self.async_get('/cgi-bin/luci/admin/servicectl/status')).lower():
-                    break
+                try:
+                    if 'finish' not in _text(await self.async_get('/cgi-bin/luci/admin/servicectl/status')).lower():
+                        await asyncio.sleep(1)
+                        continue
+                    verify = _form_fields(await self.async_get('/cgi-bin/luci/admin/network/wireless/guest'))
+                    failed = [iface for iface in ifaces if verify.get(f'cbid.wireless.{iface}.disabled') != desired]
+                    if not failed:
+                        _LOGGER.info("Cudy guest apply finished: enabled=%s interfaces=%s", enabled, ",".join(ifaces))
+                        return
+                except CudySessionExpired:
+                    await self.async_login(force=True)
                 await asyncio.sleep(1)
-            else:
-                raise CudyApplyError('Guest/firewall apply timed out')
-
-            verify = _form_fields(await self.async_get('/cgi-bin/luci/admin/network/wireless/guest'))
-            failed = [iface for iface in changed if verify.get(f'cbid.wireless.{iface}.disabled') != desired]
-            if failed:
-                raise CudyApplyError(f'Guest state verification failed for: {", ".join(failed)}')
+            raise CudyApplyError(f'Guest state verification failed for: {", ".join(ifaces)}')
