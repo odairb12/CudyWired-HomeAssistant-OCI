@@ -9,6 +9,7 @@ services:
       - cudy_alexa_data:/data
   caddy:
     image: caddy:2-alpine
+    env_file: .env
     network_mode: host
     restart: unless-stopped
     volumes:
