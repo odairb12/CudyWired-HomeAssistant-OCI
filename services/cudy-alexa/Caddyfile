@@ -1,8 +1,8 @@
 {
-  email admin@home-d20.duckdns.org
+  email {$ACME_EMAIL}
 }
 
-home-d20.duckdns.org {
+{$PUBLIC_HOSTNAME} {
   @health {
     path /health
     method GET
