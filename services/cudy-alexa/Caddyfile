@@ -1,0 +1,37 @@
+{
+  email {$ACME_EMAIL}
+  servers {
+    max_header_size 32KB
+  }
+}
+
+{$PUBLIC_HOSTNAME} {
+  header {
+    -Server
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "no-referrer"
+    Cache-Control "no-store"
+  }
+
+  @alexa {
+    path /alexa
+    method POST
+  }
+
+  request_body @alexa {
+    max_size 256KB
+  }
+
+  handle @alexa {
+    reverse_proxy 127.0.0.1:3000 {
+      # The local guard trusts this header for rate limiting. Overwrite any
+      # client-supplied value instead of forwarding an attacker-controlled XFF.
+      header_up X-Forwarded-For {remote_host}
+    }
+  }
+
+  # /health is deliberately not published. Operators can check the backend
+  # locally with: curl http://127.0.0.1:3000/health
+  respond 404
+}

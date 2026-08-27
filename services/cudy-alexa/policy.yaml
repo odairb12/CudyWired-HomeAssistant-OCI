@@ -1,0 +1,30 @@
+read:
+  system: true
+  lan: true
+  devices: true
+  wifi: true
+  guest_wifi: true
+  wisp: true
+  vpn: true
+  dhcp: true
+  mesh: true
+  routes: true
+  interfaces: true
+  arp: true
+  firewall: true
+  upnp: true
+  igmp: true
+control:
+  reboot: true
+  guest_wifi: true
+  firewall: false
+  upnp: false
+  igmp: false
+  port_forward: false
+  wifi_main: false
+  wisp: false
+  wan: false
+  vpn: false
+  dhcp: false
+  firmware: false
+  factory_reset: false

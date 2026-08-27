@@ -1,0 +1,67 @@
+name: Cudy validation
+
+on:
+  pull_request:
+  push:
+    branches: [main, security/full-hardening]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.14.2'
+
+      - name: Install Python test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check 'homeassistant==2026.8.3' 'pytest==8.4.2'
+
+      - name: Python syntax
+        run: python -m compileall -q custom_components/cudy tests
+
+      - name: Cudy unit tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: pytest -q tests/test_cudy_client.py
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.20.0'
+          package-manager-cache: false
+
+      - name: Install locked Alexa dependencies
+        working-directory: services/cudy-alexa/app
+        run: npm ci --omit=dev --ignore-scripts --audit=false --fund=false
+
+      - name: Alexa backend syntax
+        run: |
+          node --check services/cudy-alexa/app/server.js
+          node --check services/cudy-alexa/app/launcher.js
+
+      - name: Shell syntax and lint
+        run: |
+          bash -n scripts/*.sh
+          shellcheck scripts/*.sh
+
+      - name: Compose validation
+        run: |
+          cp .env.example .env
+          docker compose config -q
+          rm -f .env
+
+      - name: Caddyfile validation
+        run: |
+          docker run --rm \
+            -e PUBLIC_HOSTNAME=router.example.invalid \
+            -e ACME_EMAIL=admin@example.invalid \
+            -v "$PWD/services/cudy-alexa/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2.11.3-alpine validate --config /etc/caddy/Caddyfile

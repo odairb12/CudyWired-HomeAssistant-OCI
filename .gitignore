@@ -1,0 +1,30 @@
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Runtime secrets
+secrets/
+**/secrets/
+ha_token
+*.secret
+*.p12
+*.pfx
+
+# SSH / VPN secrets
+*.key
+*.pem
+cudy.conf
+peer_*.conf
+
+# Backups and generated archives
+*.tar
+*.tar.gz
+*.tgz
+backups/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

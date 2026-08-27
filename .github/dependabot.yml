@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /services/cudy-alexa/app
+    schedule:
+      interval: weekly
+      day: monday
+      time: '08:00'
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '08:15'
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: docker
+    directory: /services/cudy-alexa/app
+    schedule:
+      interval: weekly
+      day: monday
+      time: '08:30'
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
