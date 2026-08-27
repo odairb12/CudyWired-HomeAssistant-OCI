@@ -4,45 +4,50 @@ Este guia configura a Skill privada que consulta e controla o Cudy pela integra�
 
 ## Pré-requisitos
 
-- O serviço `cudy-alexa` está em execução na OCI com Docker.
-- O domínio público aponta para a OCI e possui certificado TLS válido por uma CA confiável.
-- A porta TCP 443 está liberada para a Alexa alcançar o endpoint.
-- A OCI alcança o Cudy pelo WireGuard.
-- O arquivo `.env` existe **somente na OCI** e não é versionado.
+- A stack principal está em execução pelo `compose.yaml` da raiz.
+- O Home Assistant possui a integração Cudy configurada.
+- O domínio público aponta para a OCI com certificado TLS válido.
+- TCP 443 está liberada para a Alexa alcançar o endpoint.
+- A OCI alcança a LAN residencial pelo WireGuard.
+- O `.env` da raiz existe somente na OCI e não é versionado.
 
 ## Criar a Skill
 
-1. Acesse [Alexa Developer Console](https://developer.amazon.com/alexa/console/ask).
-2. Escolha **Create Skill**.
-3. Nome: `Rede da Casa`.
-4. Idioma principal: **Portuguese (BR)**.
-5. Tipo: **Custom**; modelo: **Provision your own**; método: **Start from scratch**.
-6. Em **Build > Invocation**, informe `meu roteador`. Salve.
-7. Em **Interaction Model > JSON Editor**, importe o arquivo `services/cudy-alexa/alexa/pt-BR.json` e clique em **Save Model**.
-8. Em **Endpoint**, selecione **HTTPS**, com certificado de autoridade certificadora confiável, e use `https://SEU-DOMINIO/alexa`.
-9. Clique em **Build skill**.
-10. Em **Test**, selecione **Development**.
+1. Acesse o Alexa Developer Console.
+2. Crie uma Skill `Custom` em Portuguese (BR).
+3. Em **Invocation**, configure o nome desejado.
+4. Em **Interaction Model > JSON Editor**, importe `services/cudy-alexa/alexa/pt-BR.json`.
+5. Em **Endpoint**, configure `https://SEU-DOMINIO/alexa`.
+6. Salve, faça o build e habilite o modo Development para testes.
 
-Não habilite Account Linking, permissões de conta ou interfaces adicionais para esta Skill.
+Não habilite Account Linking ou permissões adicionais para esta Skill.
 
-## Associar a Skill ao backend
+## Configurar a stack
 
-Depois de criar a Skill, copie o **Application ID** em **Build > Endpoint** e defina-o somente no `.env` da OCI:
+No `.env` da raiz, configure:
 
 ```dotenv
+PUBLIC_HOSTNAME=router.example.invalid
+ACME_EMAIL=admin@example.invalid
+HA_URL=http://127.0.0.1:8123
+HA_TOKEN=CHANGE_ME
 ALEXA_SKILL_ID=amzn1.ask.skill.SUA-ID
 ```
 
-Recrie o serviço:
+Suba os serviços:
 
 ```bash
-cd /home/ubuntu/cudy-alexa
+cd /home/ubuntu/CudyWired-HomeAssistant-OCI
 docker compose up -d --build
-docker compose ps
-curl http://127.0.0.1:3000/health
 ```
 
-O backend valida assinatura, timestamp e Application ID antes de processar `POST /alexa`.
+Valide:
+
+```bash
+docker compose ps
+curl -fsS http://127.0.0.1:3000/health
+curl -fsS https://SEU-DOMINIO/health
+```
 
 ## Frases de teste
 
@@ -54,25 +59,29 @@ O backend valida assinatura, timestamp e Application ID antes de processar `POST
 - “Alexa, pedir ao meu roteador para cancelar o agendamento dos convidados.”
 - “Alexa, pedir ao meu roteador para reiniciar.”
 
-Ao ligar a rede de convidados, um prazo é obrigatório. O backend aceita de um minuto a 24 horas, mantém no máximo três agendamentos simultâneos e persiste os temporizadores no volume Docker `cudy_alexa_data`. Uma confirmação explícita é exigida antes de ligar, desligar, cancelar agendas ou reiniciar.
+Ao ligar a rede de convidados, um prazo é obrigatório. O backend aceita de um minuto a 24 horas, mantém no máximo três agendamentos simultâneos e persiste os temporizadores em `${DATA_DIR}/cudy-alexa/data`. Uma confirmação explícita é exigida antes de operações de escrita.
 
 ## Política de operações
 
-`services/cudy-alexa/policy.yaml` define as capacidades de leitura e escrita. Atualmente, somente o controle da rede de convidados e o reboot estão habilitados. Reset de fábrica, firmware e outras mudanças de configuração continuam bloqueados.
-
-Não exponha por voz reset de fábrica, firmware, WAN/WISP/VPN, firewall, logs ou alteração de configuração até que cada ação tenha desenho, autorização e rollback próprios.
+`services/cudy-alexa/policy.yaml` define capacidades de leitura e escrita. Guest Wi-Fi e reboot estão habilitados; reset, firmware e outras mudanças de alto impacto permanecem bloqueados.
 
 ## Segurança e diagnóstico
 
-- O Caddy publica somente `GET /health` e `POST /alexa`; os demais caminhos respondem 404.
-- `/health` informa apenas a saúde do backend e do Home Assistant, sem expor dados do roteador.
-- Não versione `.env`, senhas Cudy, chaves SSH, chaves WireGuard, cookies ou o Application ID real.
-- Para investigar uma falha:
+- O Caddy publica somente `GET /health` e `POST /alexa`.
+- `/health` informa apenas a saúde do backend e do Home Assistant.
+- Não versione `.env`, tokens, chaves ou credenciais.
+- A senha do Cudy fica na integração Cudy do Home Assistant, não no backend Alexa.
+- Home Assistant, Portainer e LuCI permanecem privados.
+
+Diagnóstico:
 
 ```bash
-cd /home/ubuntu/cudy-alexa
-docker compose logs --tail=100 app
-curl http://127.0.0.1:3000/health
+cd /home/ubuntu/CudyWired-HomeAssistant-OCI
+docker compose logs --tail=100 cudy-alexa
+docker compose logs --tail=100 caddy
+curl -fsS http://127.0.0.1:3000/health
 ```
 
-O check-up consulta Internet/WISP, VPN, LAN, Wi-Fi 2,4 GHz, Wi-Fi 5 GHz, Mesh e DHCP. Estado `unknown` é informado como não verificado, nunca como falha confirmada.
+## Gestão dos containers
+
+O **Portainer** faz parte do mesmo `compose.yaml` e centraliza a gestão visual dos containers. Mantenha `9443` acessível somente pela VPN ou por origem administrativa restrita.

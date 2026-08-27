@@ -86,6 +86,9 @@ install -d -m 0755 \
   "$DATA_DIR/homeassistant/config" \
   "$DATA_DIR/portainer/data" \
   "$DATA_DIR/wireguard/config" \
+  "$DATA_DIR/cudy-alexa/data" \
+  "$DATA_DIR/caddy/data" \
+  "$DATA_DIR/caddy/config" \
   "$DATA_DIR/mosquitto/data" \
   "$DATA_DIR/mosquitto/log" \
   "$DATA_DIR/nodered/data" \
@@ -108,9 +111,9 @@ docker compose config -q
 echo "compose.yaml: OK"
 
 log "[8/10] Pull core images"
-docker compose pull homeassistant portainer wireguard
+docker compose pull homeassistant portainer wireguard caddy
 
-log "[9/10] Start core services"
+log "[9/10] Start private core services"
 docker compose up -d homeassistant portainer wireguard
 
 log "[10/10] Wait for Home Assistant"
@@ -134,14 +137,17 @@ fi
 
 CUDY_CONFIG="$DATA_DIR/wireguard/config/peer_cudy/peer_cudy.conf"
 printf '\n============================================================\nSETUP COMPLETE\n============================================================\n'
+echo "Core private services started: Home Assistant, WireGuard, Portainer"
 echo "Home Assistant via VPN: http://${WG_SERVER_IP}:8123"
 echo "SSH via VPN:            ssh <usuario>@${WG_SERVER_IP}"
 echo "Portainer via VPN:      https://${WG_SERVER_IP}:9443"
 echo "WireGuard public port:  UDP/${WG_SERVER_PORT:-51820}"
 echo "Persistent data:        $DATA_DIR"
 echo
-echo "OCI normally needs only UDP/${WG_SERVER_PORT:-51820} exposed publicly."
-echo "Open TCP/22, TCP/8123 or TCP/9443 in OCI temporarily when required."
+echo "Configure PUBLIC_HOSTNAME, ACME_EMAIL, HA_TOKEN and ALEXA_SKILL_ID before starting Alexa/Caddy."
+echo "Then run: docker compose up -d --build cudy-alexa caddy"
+echo
+echo "Keep SSH, Home Assistant and Portainer closed to the public Internet."
 
 if [[ -f "$CUDY_CONFIG" ]]; then
   echo
