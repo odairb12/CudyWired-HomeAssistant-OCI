@@ -28,3 +28,9 @@ backups/
 Thumbs.db
 .vscode/
 .idea/
+
+# Language and test artifacts
+node_modules/
+__pycache__/
+*.py[cod]
+.pytest_cache/

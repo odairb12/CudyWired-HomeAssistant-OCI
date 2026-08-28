@@ -4,6 +4,8 @@ Home Assistant em OCI com Docker, WireGuard, integração Cudy, backend Alexa e 
 
 Os dados persistentes e segredos ficam fora do Git, por padrão em `/srv/home-automation`. Todos os endereços deste repositório são exemplos mascarados; valores operacionais pertencem somente ao `.env` privado da VM.
 
+> **Navegação:** [Primeiros passos](docs/OCI.md) · [Cudy e WireGuard](docs/CUDY.md) · [Alexa](docs/ALEXA-CUSTOM-SKILL.md) · [Configurar a Skill](docs/ALEXA-CUSTOM-SKILL-SETUP.md) · [Segurança](docs/SECURITY.md) · [Troubleshooting](docs/TROUBLESHOOTING.md)
+
 ## Arquitetura
 
 ```text
@@ -54,7 +56,7 @@ O setup migra automaticamente uma configuração legada que ainda contenha esse 
 
 O projeto aplica defesa em profundidade:
 
-- `22`, `8123` e `9443` são aceitas localmente somente por `wg0`, salvo exceção SSH explícita e restrita;
+- uma tabela dedicada do `nftables` permite `22`, `8123` e `9443` localmente somente por `wg0`, salvo exceção SSH explícita e restrita;
 - `8000/9000` permanecem bloqueadas;
 - IPv4 e IPv6 recebem regras equivalentes;
 - Caddy publica somente `POST /alexa`; `/health` é local;
@@ -123,12 +125,22 @@ sudo docker compose up -d --build
 sudo ./scripts/validate.sh
 ```
 
+O backend Alexa possui testes automatizados. Para executá-los isoladamente:
+
+```bash
+cd services/cudy-alexa/app
+npm ci
+npm test
+```
+
 ## Documentação
 
-- [Segurança](docs/SECURITY.md)
-- [OCI](docs/OCI.md)
-- [Cudy + WireGuard](docs/CUDY.md)
-- [Alexa](docs/ALEXA-CUSTOM-SKILL.md)
-- [Setup Alexa](docs/ALEXA-CUSTOM-SKILL-SETUP.md)
-- [Troubleshooting](docs/TROUBLESHOOTING.md)
-- [Migração](docs/MIGRATION.md)
+| Guia | Quando usar |
+|---|---|
+| [OCI do zero](docs/OCI.md) | Criar VCN, VM, regras de rede e acesso SSH |
+| [Cudy + WireGuard](docs/CUDY.md) | Configurar o túnel e validar o acesso à LAN |
+| [Arquitetura Alexa](docs/ALEXA-CUSTOM-SKILL.md) | Entender segurança, operações e diálogo |
+| [Setup Alexa em Baby Steps](docs/ALEXA-CUSTOM-SKILL-SETUP.md) | Criar e testar a Custom Skill |
+| [Segurança](docs/SECURITY.md) | Conferir firewall, segredos e exposição |
+| [Troubleshooting](docs/TROUBLESHOOTING.md) | Diagnosticar falhas de OCI, VPN, HA e Alexa |
+| [Migração](docs/MIGRATION.md) | Migrar uma instalação com layout legado |

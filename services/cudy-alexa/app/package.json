@@ -6,10 +6,13 @@
   "engines": {
     "node": ">=24.20.0 <25"
   },
+  "scripts": {
+    "test": "node --test server.test.js guest-duration.test.js status-normalizer.test.js"
+  },
   "dependencies": {
     "ask-sdk-core": "2.14.0",
     "ask-sdk-express-adapter": "2.14.0",
     "express": "4.22.2",
-    "yaml": "2.6.1"
+    "yaml": "2.9.0"
   }
 }

@@ -135,6 +135,8 @@ services:
       - --http-disabled
       - --bind-https
       - :9443
+      - --tunnel-addr
+      - 127.0.0.1
     security_opt:
       - no-new-privileges:true
     volumes:

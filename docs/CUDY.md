@@ -1,5 +1,7 @@
 # Cudy WR3000 + WireGuard
 
+[← Início](../README.md) · [OCI](OCI.md) · [Alexa](ALEXA-CUSTOM-SKILL.md) · [Segurança](SECURITY.md) · [Troubleshooting](TROUBLESHOOTING.md)
+
 O WR3000 atua como **cliente WireGuard** e conecta a rede residencial diretamente ao namespace de rede do host OCI.
 
 > Os endereços deste documento são exemplos mascarados. Use os valores reais somente no `.env` não versionado da OCI.
@@ -183,3 +185,17 @@ As chaves e configurações do peer permanecem em:
 ```
 
 Recriar o container não deve apagar esse diretório. Não remova `peer_cudy` nem as chaves existentes sem intenção de reconfigurar o roteador.
+
+## 9. Escritas LuCI suportadas
+
+A integração não inventa endpoints OpenWrt. Ela primeiro lê a página do firmware Cudy e aceita somente caminhos previstos pelo código.
+
+No firmware validado, o reboot é disparado pelo JavaScript da página através de:
+
+```text
+GET /cgi-bin/luci/admin/system/reboot/apply
+```
+
+O parser aceita exclusivamente esse caminho; URLs arbitrárias e o endpoint de reset são rejeitados. Como o roteador pode fechar a conexão imediatamente após aceitar o reboot, esse GET nunca é repetido automaticamente.
+
+O Guest Wi-Fi continua usando o fluxo específico do firmware para salvar e aplicar a alteração nas duas bandas. Firmware e reset de fábrica permanecem fora das operações permitidas pela Alexa.

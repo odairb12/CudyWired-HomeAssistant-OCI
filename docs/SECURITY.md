@@ -1,10 +1,12 @@
 # Segurança
 
+[← Início](../README.md) · [OCI](OCI.md) · [Cudy e WireGuard](CUDY.md) · [Alexa](ALEXA-CUSTOM-SKILL.md) · [Troubleshooting](TROUBLESHOOTING.md)
+
 ## Princípio
 
 A infraestrutura usa defesa em profundidade. A OCI não é mais a única barreira contra exposição acidental:
 
-1. **Firewall local da VM**: `22`, `8123` e `9443` são aceitas somente pela interface WireGuard `wg0`. As portas administrativas são explicitamente bloqueadas nas demais interfaces IPv4 e IPv6.
+1. **Firewall local da VM**: uma tabela dedicada `inet home_automation` do `nftables` aceita `22`, `8123` e `9443` somente pela interface WireGuard `wg0`. As portas administrativas são explicitamente bloqueadas nas demais interfaces IPv4 e IPv6.
 2. **OCI Security List/NSG**: deve manter a mesma política como segunda barreira.
 3. **Aplicações**: Alexa e Portainer possuem controles adicionais de exposição e privilégios.
 
@@ -89,6 +91,7 @@ O Portainer possui `/var/run/docker.sock`; comprometê-lo equivale, na prática,
 - roda em `network_mode: host`, fazendo todo tráfego passar pelo firewall `INPUT` do host;
 - `9443` é aceita somente em `wg0`;
 - `8000` e `9000` são bloqueadas;
+- o endereço de tunnel/Edge é ligado somente a `127.0.0.1`, evitando listener público legado;
 - nunca deve ser publicado por Caddy ou liberado no NSG para a Internet.
 
 ## Containers
@@ -112,6 +115,8 @@ O GitHub executa automaticamente:
 Actions de terceiros são pinadas por SHA. O workflow que publica a imagem Alexa aceita somente `main` e gera SBOM/provenance.
 
 Dependabot verifica semanalmente dependências npm, GitHub Actions e a imagem base do backend Alexa.
+
+O backend Alexa usa Node.js 24 e dependências com versões explícitas. O CI executa também os testes unitários do diálogo, duração, normalização de status e ações Guest Wi-Fi.
 
 ## Segredos
 

@@ -1,5 +1,7 @@
 # Migracao do layout legado
 
+[← Início](../README.md) · [OCI](OCI.md) · [Cudy e WireGuard](CUDY.md) · [Alexa](ALEXA-CUSTOM-SKILL.md) · [Segurança](SECURITY.md) · [Troubleshooting](TROUBLESHOOTING.md)
+
 Use este procedimento somente se a VM atual foi montada durante os testes anteriores e possui dados persistentes diretamente em:
 
 ```text

@@ -1,5 +1,7 @@
 # Troubleshooting
 
+[← Início](../README.md) · [OCI](OCI.md) · [Cudy e WireGuard](CUDY.md) · [Alexa](ALEXA-CUSTOM-SKILL.md) · [Segurança](SECURITY.md)
+
 > Os endereços deste documento são exemplos mascarados. Use os valores reais apenas a partir do `.env` não versionado da OCI.
 
 ## Verificação geral
@@ -31,10 +33,41 @@ Confirme:
 5. firewall local.
 
 ```bash
-sudo iptables -L INPUT -n -v --line-numbers
+sudo nft list table inet home_automation
+sudo systemctl status home-automation-firewall.service --no-pager
 ```
 
-Imagens OCI podem ter uma regra final `REJECT`; o serviço systemd deste projeto insere as portas necessárias antes dela.
+O projeto usa uma tabela `nftables` própria e não depende da ordem de regras `iptables` fornecidas pela imagem OCI.
+
+## A Alexa entende outra intent ao ouvir “ligue a rede de convidados”
+
+Confirme que o modelo mais recente foi importado e compilado no Alexa Developer Console:
+
+```text
+Build -> Interaction Model -> JSON Editor
+arquivo: services/cudy-alexa/alexa/pt-BR.json
+Save Model -> Build Model
+```
+
+As formas `ligue`, `ative`, `habilite`, `desligue` e `desative` devem resolver para o slot `GUEST_ACTION`. Consulte o backend:
+
+```bash
+sudo docker compose logs --since=10m cudy-alexa
+```
+
+O esperado ao falar “ligue” é `GuestWifiControlIntent` com o slot de ação correspondente. Se aparecer `GuestScheduleStatusIntent`, o modelo publicado ainda está desatualizado.
+
+## “Sim” informa que não existe ação pendente
+
+Atualize o backend e reconstrua somente o serviço Alexa:
+
+```bash
+git pull
+sudo docker compose up -d --build --no-deps cudy-alexa
+curl -fsS http://127.0.0.1:3000/health
+```
+
+No fluxo atual, “sim” confirma uma escrita quando existe ação pendente; depois de uma resposta concluída, “sim” mantém a conversa aberta e “não” encerra a Skill.
 
 ## WireGuard tem handshake, mas o IP do servidor VPN não responde
 
@@ -57,7 +90,7 @@ Verifique se UDP/51820 está liberada:
 
 - OCI Security List/NSG;
 - firewall da VM;
-- `docker compose ps`;
+- `sudo docker compose ps`;
 - endpoint/porta importados no Cudy.
 
 ```bash

@@ -1,5 +1,7 @@
 # Oracle Cloud Infrastructure
 
+[← Início](../README.md) · [Cudy e WireGuard](CUDY.md) · [Alexa](ALEXA-CUSTOM-SKILL.md) · [Segurança](SECURITY.md) · [Troubleshooting](TROUBLESHOOTING.md)
+
 ## 1. Rede
 
 Crie uma VCN com conectividade à Internet antes da VM:
@@ -63,11 +65,20 @@ TCP 8123
 TCP 9443
 ```
 
-A VM possui uma segunda barreira: o firewall local bloqueia `22`, `8123` e `9443` fora de `wg0`, além de bloquear `8000/9000`. Assim, uma abertura acidental no NSG não deve ser suficiente para publicar os serviços administrativos.
+A VM possui uma segunda barreira: a tabela `inet home_automation` do `nftables` bloqueia `22`, `8123` e `9443` fora de `wg0`, além de bloquear `8000/9000`. Assim, uma abertura acidental no NSG não deve ser suficiente para publicar os serviços administrativos.
 
 Se SSH público emergencial for indispensável, restrinja o NSG a um único `/32` e defina o mesmo CIDR em `SSH_PUBLIC_CIDR` no `.env`; reaplique o setup e remova a exceção assim que terminar. Home Assistant e Portainer não possuem exceção pública equivalente no firewall do projeto.
 
 > `Source Port` deve permanecer `All`. A porta do serviço é informada em `Destination Port`.
+
+Valide a barreira local depois do setup:
+
+```bash
+sudo nft list table inet home_automation
+sudo systemctl status home-automation-firewall.service --no-pager
+```
+
+O script primeiro executa `nft --check` em um arquivo temporário e só então substitui a tabela dedicada. Ele não modifica tabelas pertencentes ao Docker ou à imagem OCI.
 
 ## 5. Boot Volume
 

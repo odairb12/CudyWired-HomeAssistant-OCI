@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import time
-
 from homeassistant.components.button import ButtonEntity
 
-from .client import CudyApplyError, CudyCannotConnect, _inputs
+from .client import CudyApplyError, CudyCannotConnect, CudySessionExpired, _reboot_apply_path
 from .const import DOMAIN
 from .entity import CudyEntity
 
@@ -28,19 +26,16 @@ class CudyRebootButton(CudyEntity, ButtonEntity):
     async def async_press(self) -> None:
         self.client._assert_write_supported()
         doc = await self.client.async_get("/cgi-bin/luci/admin/system/reboot")
-        fields = _inputs(doc)
-        if not fields.get("token"):
-            raise CudyApplyError("Reboot form token missing")
-        fields["timeclock"] = str(int(time.time()))
-        fields["cbi.submit"] = "1"
+        apply_path = _reboot_apply_path(doc)
+        if not apply_path:
+            raise CudyApplyError("Reboot apply endpoint missing")
         try:
             await self.client._request(
-                "POST",
-                "/cgi-bin/luci/admin/system/reboot",
-                data=fields,
+                "GET",
+                apply_path,
                 retry_get=False,
             )
-        except CudyCannotConnect:
-            # The router commonly closes the connection after accepting reboot.
-            # Never retry a reboot POST. The caller must treat this as unconfirmed.
+        except (CudyCannotConnect, CudySessionExpired):
+            # The router commonly closes or redirects the connection after
+            # accepting reboot. Never retry this state-changing GET.
             return

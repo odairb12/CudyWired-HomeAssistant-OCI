@@ -23,7 +23,8 @@ function loadSecret(filePath) {
 // the original application is started.
 process.env.HA_TOKEN = loadSecret(HA_TOKEN_FILE);
 process.env.PORT = String(BACKEND_PORT);
-require('./server.js');
+const { startServer } = require('./server.js');
+startServer(BACKEND_PORT);
 
 let concurrent = 0;
 const buckets = new Map();

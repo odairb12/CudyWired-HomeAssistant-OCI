@@ -1,5 +1,7 @@
 # Configuração da Alexa Custom Skill
 
+[← Início](../README.md) · [Arquitetura Alexa](ALEXA-CUSTOM-SKILL.md) · [OCI](OCI.md) · [Segurança](SECURITY.md) · [Troubleshooting](TROUBLESHOOTING.md)
+
 Este guia configura a Skill privada que consulta e controla o Cudy pela integração do Home Assistant na OCI, através do WireGuard. Ela não depende de Nabu Casa nem de uma Smart Home Skill.
 
 ## Pré-requisitos
@@ -15,7 +17,7 @@ Este guia configura a Skill privada que consulta e controla o Cudy pela integra�
 
 1. Acesse o Alexa Developer Console.
 2. Crie uma Skill `Custom` em Portuguese (BR).
-3. Em **Invocation**, configure o nome desejado.
+3. Em **Invocation**, configure `meu roteador`, que corresponde ao modelo versionado.
 4. Em **Interaction Model > JSON Editor**, importe `services/cudy-alexa/alexa/pt-BR.json`.
 5. Em **Endpoint**, configure `https://SEU-DOMINIO/alexa`.
 6. Salve, faça o build e habilite o modo Development para testes.
@@ -46,13 +48,13 @@ Suba os serviços:
 ```bash
 cd /home/ubuntu/CudyWired-HomeAssistant-OCI
 sudo ./scripts/setup-home.sh
-docker compose up -d --build
+sudo docker compose up -d --build
 ```
 
 Valide:
 
 ```bash
-docker compose ps
+sudo docker compose ps
 curl -fsS http://127.0.0.1:3000/health
 sudo ./scripts/validate.sh
 ```
@@ -64,12 +66,28 @@ Não existe health check público: requisições HTTPS externas diferentes de `P
 - “Alexa, abrir meu roteador.”
 - “Alexa, perguntar ao meu roteador como está a rede.”
 - “Alexa, perguntar ao meu roteador se há algum serviço indisponível.”
-- “Alexa, abrir meu roteador”; depois: “ligar a rede de convidados”; “duas horas”; “pode fazer”.
+- “Alexa, abrir meu roteador”; depois: “ligue a rede de convidados”; “duas horas”; “sim”.
 - “Alexa, perguntar ao meu roteador quando a rede de convidados desliga.”
 - “Alexa, pedir ao meu roteador para cancelar o agendamento dos convidados.”
 - “Alexa, pedir ao meu roteador para reiniciar.”
 
 Ao ligar a rede de convidados, um prazo é obrigatório. O backend aceita de um minuto a 24 horas, mantém no máximo três agendamentos simultâneos e persiste os temporizadores em `${DATA_DIR}/cudy-alexa/data`. Uma confirmação explícita é exigida antes de operações de escrita.
+
+### Teste completo do diálogo
+
+Execute esta sequência sem trocar a frase de invocação no meio da sessão:
+
+1. Diga “Alexa, abrir meu roteador”.
+2. Diga “Ligue a rede de convidados”.
+3. Quando a Alexa perguntar a duração, diga “Uma hora”.
+4. Confirme somente depois de ouvir “Você confirma a operação de ativação?”.
+5. Aguarde a resposta progressiva e a conclusão.
+6. Quando a Alexa perguntar se deseja saber mais, diga “sim”.
+7. Faça uma consulta, como “qual o status da VPN?”.
+8. Na próxima pergunta de continuidade, diga “não”.
+9. Confirme que a Skill responde “Tudo bem. Até logo.” e encerra.
+
+Também valide `ligue`, `ative`, `habilite`, `desligue` e `desative`. O modelo converte essas variações para as ações canônicas.
 
 ## Política de operações
 
@@ -88,10 +106,12 @@ Diagnóstico:
 
 ```bash
 cd /home/ubuntu/CudyWired-HomeAssistant-OCI
-docker compose logs --tail=100 cudy-alexa
-docker compose logs --tail=100 caddy
+sudo docker compose logs --tail=100 cudy-alexa
+sudo docker compose logs --tail=100 caddy
 curl -fsS http://127.0.0.1:3000/health
 ```
+
+Os logs registram tipo da requisição, intent e valores de slots truncados. Eles não devem conter tokens, cookies, chaves ou o payload completo da Alexa.
 
 ## Gestão dos containers
 

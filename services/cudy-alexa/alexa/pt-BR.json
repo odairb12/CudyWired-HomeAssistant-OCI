@@ -144,8 +144,8 @@
         {
           "name": "GUEST_ACTION",
           "values": [
-            { "name": { "value": "ligar", "synonyms": ["ativar", "habilitar"] } },
-            { "name": { "value": "desligar", "synonyms": ["desativar"] } }
+            { "name": { "value": "ligar", "synonyms": ["liga", "ligue", "ativar", "ative", "habilitar", "habilite", "acender", "acenda"] } },
+            { "name": { "value": "desligar", "synonyms": ["desliga", "desligue", "desativar", "desative", "desabilitar", "desabilite", "apagar", "apague"] } }
           ]
         },
         {

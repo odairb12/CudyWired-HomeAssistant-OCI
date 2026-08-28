@@ -47,6 +47,10 @@ jobs:
           node --check services/cudy-alexa/app/server.js
           node --check services/cudy-alexa/app/launcher.js
 
+      - name: Alexa backend unit tests
+        working-directory: services/cudy-alexa/app
+        run: npm test
+
       - name: Shell syntax and lint
         run: |
           bash -n scripts/*.sh

@@ -4,6 +4,7 @@ from custom_components.cudy.client import (
     CudyClient,
     CudyUnsupportedFirmware,
     _match,
+    _reboot_apply_path,
     _form_fields,
     _bool_status,
     _sha,
@@ -51,6 +52,12 @@ def test_firmware_version_label_extracts_semantic_version():
 def test_host_without_scheme_is_normalized():
     client = CudyClient("192.168.10.1", "admin", "secret", False)
     assert client.base == "http://192.168.10.1"
+
+
+def test_reboot_apply_path_is_extracted_only_from_expected_luci_javascript():
+    document = """<script>$.get('/cgi-bin/luci/admin/system/reboot/apply', function () {});</script>"""
+    assert _reboot_apply_path(document) == "/cgi-bin/luci/admin/system/reboot/apply"
+    assert _reboot_apply_path("<script>$.get('/cgi-bin/luci/admin/system/reset/apply')</script>") is None
 
 
 @pytest.mark.parametrize("text", ["Status Connected", "Status Enabled", "Status SOLE", "Status Ativo"])

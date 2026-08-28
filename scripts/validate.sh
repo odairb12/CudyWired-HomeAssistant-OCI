@@ -77,13 +77,13 @@ else
   fail "Peer Cudy nao responde pela VPN"
 fi
 
-if iptables -S HOME_AUTOMATION_INPUT 2>/dev/null | grep -q -- '--dports 22,8000,9000,8123,9443 -j DROP'; then
+if nft list chain inet home_automation input 2>/dev/null | grep -Eq 'tcp dport \{[^}]*22[^}]*8000[^}]*8123[^}]*9000[^}]*9443[^}]*\} drop'; then
   ok "Firewall bloqueia portas administrativas fora da VPN"
 else
   fail "Regra de bloqueio administrativo nao encontrada"
 fi
 
-if iptables -S HOME_AUTOMATION_INPUT 2>/dev/null | grep -q -- '-i wg0 .*--dports 22,8123,9443 .* -j ACCEPT'; then
+if nft list chain inet home_automation input 2>/dev/null | grep -Eq 'iifname "wg0" tcp dport \{[^}]*22[^}]*8123[^}]*9443[^}]*\} accept'; then
   ok "Firewall permite administracao por wg0"
 else
   fail "Regra administrativa de wg0 nao encontrada"
@@ -95,10 +95,10 @@ else
   fail "Portainer 9443 nao esta escutando"
 fi
 
-if ss -lnt 2>/dev/null | grep -qE '(^|[[:space:]])[^[:space:]]*:(8000|9000)[[:space:]]'; then
-  warn "Portainer possui listener 8000/9000; firewall deve mante-lo bloqueado"
+if ss -lntH 2>/dev/null | awk '{print $4}' | grep -qE '^(\*|0\.0\.0\.0|\[::\]):(8000|9000)$'; then
+  warn "Portainer possui listener publico 8000/9000; firewall deve mante-lo bloqueado"
 else
-  ok "Portainer sem listeners legados 8000/9000"
+  ok "Portainer sem listeners publicos 8000/9000"
 fi
 
 if [[ -f /etc/ssh/sshd_config.d/99-home-automation-hardening.conf ]]; then
@@ -128,7 +128,7 @@ if [[ "$VERBOSE" -eq 1 ]]; then
   printf '\n--- Diagnostico ---\n'
   docker compose ps || true
   printf '\nFirewall home automation:\n'
-  iptables -S HOME_AUTOMATION_INPUT || true
+  nft list table inet home_automation || true
   printf '\nWireGuard:\n'
   docker exec wireguard wg show || true
   printf '\nInterface wg0:\n'

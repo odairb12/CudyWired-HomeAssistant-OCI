@@ -69,6 +69,15 @@ def _match(text: str, patterns: list[str]):
             return m.group(1).strip()
     return None
 
+def _reboot_apply_path(doc: str) -> str | None:
+    """Return the firmware-owned reboot endpoint without accepting arbitrary URLs."""
+    match = re.search(
+        r"\$\.get\(\s*['\"](?P<path>/cgi-bin/luci/admin/system/reboot/apply)['\"]",
+        doc,
+        re.I | re.S,
+    )
+    return match.group('path') if match else None
+
 def _bool_status(text: str):
     low = text.lower()
     if re.search(r'\b(disconnected|desconectado|disabled|desabilitado|offline|down|inactive|inativo)\b', low): return False

@@ -145,9 +145,17 @@ function scheduleSummary() {
 }
 async function rebootRouter() { const button = await state(E.reboot); if (!button || button.state === 'unavailable') throw new Error('reboot unavailable'); await service('button', 'press', E.reboot); }
 
-function response(text, keepOpen = false) { return { outputSpeech: { type: 'PlainText', text }, ...(keepOpen ? { reprompt: { outputSpeech: { type: 'PlainText', text: 'Posso ajudar com mais alguma informação da rede?' } }, shouldEndSession: false } : { shouldEndSession: true }) }; }
+const MORE_HELP_QUESTION = 'Deseja saber mais alguma coisa do seu roteador?';
+function response(text, keepOpen = false) {
+  if (!keepOpen) return { outputSpeech: { type: 'PlainText', text }, shouldEndSession: true };
+  return {
+    outputSpeech: { type: 'PlainText', text: `${text} ${MORE_HELP_QUESTION}` },
+    reprompt: { outputSpeech: { type: 'PlainText', text: 'Se quiser continuar, diga sim. Para encerrar, diga não.' } },
+    shouldEndSession: false,
+  };
+}
 function prompt(text, reprompt = 'Você pode responder com uma duração, por exemplo, duas horas ou trinta minutos.') { return { outputSpeech: { type: 'PlainText', text }, reprompt: { outputSpeech: { type: 'PlainText', text: reprompt } }, shouldEndSession: false }; }
-function confirmation(text, pendingAction) { return { outputSpeech: { type: 'PlainText', text }, reprompt: { outputSpeech: { type: 'PlainText', text: 'Diga pode fazer para confirmar, ou cancelar.' } }, shouldEndSession: false, sessionAttributes: { pendingAction } }; }
+function confirmation(text, pendingAction) { return { outputSpeech: { type: 'PlainText', text }, reprompt: { outputSpeech: { type: 'PlainText', text: 'Diga sim para confirmar ou não para cancelar.' } }, shouldEndSession: false, sessionAttributes: { pendingAction } }; }
 async function progressiveResponse(handlerInput, text) {
   const system = handlerInput.requestEnvelope?.context?.System || {}; const requestId = handlerInput.requestEnvelope?.request?.requestId;
   if (!system.apiEndpoint || !system.apiAccessToken || !requestId) return;
@@ -165,12 +173,12 @@ function readPending(h) {
   if (entry.expiresAt <= Date.now()) { pendingActions.delete(key); return null; } return entry.action;
 }
 function clearPending(h) { const key = pendingKey(h); if (key) pendingActions.delete(key); h.attributesManager.setSessionAttributes({}); }
-function slot(h, name) { return Alexa.getSlotValue(h.requestEnvelope, name) || ''; }
+function slot(h, name) { const value = Alexa.getSlotValue(h.requestEnvelope, name) || ''; return name === 'Action' ? normalizeGuestAction(value) : value; }
 function durationConfirmation(h, band, durationValue) {
   const durationMs = parseDuration(durationValue);
   if (!durationMs || durationMs < MIN_GUEST_DURATION_MS || durationMs > MAX_GUEST_DURATION_MS) { rememberPending(h, { type: 'guest_duration', band }); return prompt('O período deve ser de um minuto até vinte e quatro horas. Por quanto tempo devo manter a rede ligada?'); }
   const pending = { type: 'guest_timed', band: normalizeBand(band), durationMs }; rememberPending(h, pending);
-  return confirmation(`Combinado. Vou deixar a rede de convidados ligada por ${humanDuration(durationMs)}. Posso confirmar?`, pending);
+  return confirmation(`Combinado. Vou deixar a rede de convidados ligada por ${humanDuration(durationMs)}. Você confirma a operação de ativação?`, pending);
 }
 
 const launchHandler = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'LaunchRequest', handle: () => prompt('Olá. Posso fazer um check-up da rede, consultar os serviços, ou controlar a rede de convidados. O que você gostaria de fazer?', 'Você pode dizer, por exemplo: faça um check-up da rede.') };
@@ -178,19 +186,21 @@ const networkStatus = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope
 const detailStatus = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'NetworkDetailIntent', async handle(h) { const category = slot(h, 'Category').toLowerCase(); const map = { sistema: [E.uptime, 'tempo de atividade'], lan: [E.lan, 'IP da LAN'], dispositivos: [E.clients, 'dispositivos conectados'], wifi: [E.channel, 'canal Wi-Fi'], convidados: [E.guestAll, 'rede de convidados'], wisp: [E.wisp, 'WISP'], vpn: [E.vpn, 'VPN'], dhcp: [process.env.HA_ENTITY_DHCP_STATUS || 'binary_sensor.cudy_dhcp', 'DHCP'], mesh: [process.env.HA_ENTITY_MESH_STATUS || 'binary_sensor.cudy_mesh', 'Mesh'] }; const [entityId, label] = map[category] || [E.uptime, 'tempo de atividade']; try { const entityState = await state(entityId); const value = category === 'vpn' ? spokenFeminine(entityState) : spoken(entityState); return response(`${label}: ${value}.`, true); } catch { return response(`Não consegui consultar ${label} agora.`, true); } } };
 const healthCheck = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'NetworkHealthIntent', async handle() { const results = await Promise.all(CHECKUP.map(async ([label, entityId]) => { try { return [label, await state(entityId)]; } catch { return [label, null]; } })); const problems = [], unknown = []; for (const [label, entityState] of results) { if (!available(entityState)) unknown.push(label); else if (entityState.state !== 'on') problems.push(label); } if (problems.length) return response(`O check-up encontrou ${problems.length === 1 ? 'um serviço indisponível' : 'serviços indisponíveis'}: ${problems.join(', ')}.${unknown.length ? ` Também não consegui confirmar: ${unknown.join(', ')}.` : ''}`, true); if (unknown.length) return response(`Não encontrei falhas confirmadas, mas não consegui verificar: ${unknown.join(', ')}.`, true); return response('O check-up está normal. Internet, WISP, Mesh, LAN, Wi-Fi, VPN e DHCP estão ativos.', true); } };
 
-const guestControl = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'GuestWifiControlIntent', handle(h) { const requested = slot(h, 'Action').toLowerCase(); const action = ({ ativar: 'ligar', habilitar: 'ligar', desativar: 'desligar' })[requested] || requested; const band = normalizeBand(slot(h, 'Band') || 'todas'); if (!permitted('control', 'guest_wifi')) return response('O controle da rede de convidados está desabilitado.'); if (!['ligar', 'desligar'].includes(action)) return response('Diga ligar ou desligar a rede de convidados.', true); if (action === 'ligar') { const pending = { type: 'guest_duration', band }; rememberPending(h, pending); return prompt('Certo. Por quanto tempo você quer deixar a rede de convidados disponível?'); } const pending = { type: 'guest_off', band }; rememberPending(h, pending); return confirmation('Combinado. Vou desligar a rede de convidados e cancelar os agendamentos correspondentes. Posso confirmar?', pending); } };
+const guestControl = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'GuestWifiControlIntent', handle(h) { const requested = slot(h, 'Action').toLowerCase(); const action = ({ ativar: 'ligar', habilitar: 'ligar', desativar: 'desligar' })[requested] || requested; const band = normalizeBand(slot(h, 'Band') || 'todas'); if (!permitted('control', 'guest_wifi')) return response('O controle da rede de convidados está desabilitado.'); if (!['ligar', 'desligar'].includes(action)) return response('Diga ligar ou desligar a rede de convidados.', true); if (action === 'ligar') { const pending = { type: 'guest_duration', band }; rememberPending(h, pending); return prompt('Certo. Por quanto tempo você quer deixar a rede de convidados disponível?'); } const pending = { type: 'guest_off', band }; rememberPending(h, pending); return confirmation('Combinado. Vou desligar a rede de convidados e cancelar os agendamentos correspondentes. Você confirma a operação de desativação?', pending); } };
 const guestTimed = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'GuestWifiTimedIntent', handle(h) { if (!permitted('control', 'guest_wifi')) return response('O controle da rede de convidados está desabilitado.'); return durationConfirmation(h, slot(h, 'Band') || 'todas', slot(h, 'Duration')); } };
 const guestDuration = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'GuestDurationIntent', handle(h) { const pending = readPending(h); if (!pending || pending.type !== 'guest_duration') return response('Primeiro me peça para ligar a rede de convidados.', true); return durationConfirmation(h, pending.band, slot(h, 'Duration')); } };
 const guestScheduleStatus = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'GuestScheduleStatusIntent', handle: () => response(scheduleSummary(), true) };
-const guestScheduleCancel = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'GuestScheduleCancelIntent', handle(h) { if (!guestSchedules.length) return response('Não há agendamentos ativos para cancelar.', true); const pending = { type: 'cancel_schedules', band: 'todas' }; rememberPending(h, pending); return confirmation('Vou cancelar os agendamentos e desligar a rede de convidados. Posso confirmar?', pending); } };
-const rebootHandler = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'RouterRebootIntent', handle(h) { if (!permitted('control', 'reboot')) return response('O reinício remoto está desabilitado.'); const pending = { type: 'reboot' }; rememberPending(h, pending); return confirmation('O roteador será reiniciado e a rede ficará indisponível por alguns minutos. Posso confirmar?', pending); } };
+const guestScheduleCancel = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'GuestScheduleCancelIntent', handle(h) { if (!guestSchedules.length) return response('Não há agendamentos ativos para cancelar.', true); const pending = { type: 'cancel_schedules', band: 'todas' }; rememberPending(h, pending); return confirmation('Vou cancelar os agendamentos e desligar a rede de convidados. Você confirma o cancelamento?', pending); } };
+const rebootHandler = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'RouterRebootIntent', handle(h) { if (!permitted('control', 'reboot')) return response('O reinício remoto está desabilitado.'); const pending = { type: 'reboot' }; rememberPending(h, pending); return confirmation('O roteador será reiniciado e a rede ficará indisponível por alguns minutos. Você confirma a reinicialização?', pending); } };
 
 const confirmationHandler = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && ['ConfirmActionIntent', 'AMAZON.YesIntent'].includes(Alexa.getIntentName(h.requestEnvelope)), async handle(h) {
-  const pending = readPending(h); if (!pending) return response('Não há nenhuma ação pendente para confirmar.', true); clearPending(h);
+  const pending = readPending(h);
+  if (!pending) return prompt('Ótimo, vamos lá. O que você deseja fazer?', 'Você pode pedir um check-up, consultar um serviço ou controlar a rede de convidados.');
+  clearPending(h);
   try {
-    if (pending.type === 'guest_timed') { await progressiveResponse(h, 'Certo, estou aplicando a alteração. Aguarde um instante.'); const item = await scheduleGuest(pending.band, pending.durationMs); return response(`Pronto. A rede de convidados está ligada e será desligada às ${spokenTime(item.due)}.`); }
-    if (pending.type === 'guest_off' || pending.type === 'cancel_schedules') { await progressiveResponse(h, 'Certo, estou aplicando a alteração. Aguarde um instante.'); await cancelSchedules(pending.band); return response('Pronto. A rede de convidados foi desligada e os agendamentos correspondentes foram cancelados.'); }
-    if (pending.type === 'reboot') { await progressiveResponse(h, 'Certo, estou iniciando o reinício do roteador. Aguarde um instante.'); await rebootRouter(); return response('O comando de reinicialização foi enviado. O roteador pode ficar indisponível por alguns minutos.'); }
+    if (pending.type === 'guest_timed') { await progressiveResponse(h, 'Certo, estou aplicando a alteração. Aguarde um instante.'); const item = await scheduleGuest(pending.band, pending.durationMs); return response(`Pronto. A rede de convidados está ligada e será desligada às ${spokenTime(item.due)}.`, true); }
+    if (pending.type === 'guest_off' || pending.type === 'cancel_schedules') { await progressiveResponse(h, 'Certo, estou aplicando a alteração. Aguarde um instante.'); await cancelSchedules(pending.band); return response('Pronto. A rede de convidados foi desligada e os agendamentos correspondentes foram cancelados.', true); }
+    if (pending.type === 'reboot') { await progressiveResponse(h, 'Certo, estou iniciando o reinício do roteador. Aguarde um instante.'); await rebootRouter(); return response('O comando de reinicialização foi enviado. O roteador pode ficar indisponível por alguns minutos.', true); }
     return response('A ação pendente expirou. Faça o pedido novamente.', true);
   } catch (error) {
     console.error('confirmed action:', error.message);
@@ -199,10 +209,15 @@ const confirmationHandler = { canHandle: (h) => Alexa.getRequestType(h.requestEn
     return response('Não consegui concluir a alteração agora. A configuração anterior foi preservada; tente novamente em alguns instantes.', true);
   }
 } };
-const cancelHandler = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && ['CancelActionIntent', 'AMAZON.NoIntent', 'AMAZON.CancelIntent', 'AMAZON.StopIntent'].includes(Alexa.getIntentName(h.requestEnvelope)), handle(h) { clearPending(h); return response('Tudo bem. A operação foi cancelada.'); } };
+const cancelHandler = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && ['CancelActionIntent', 'AMAZON.NoIntent', 'AMAZON.CancelIntent', 'AMAZON.StopIntent'].includes(Alexa.getIntentName(h.requestEnvelope)), handle(h) {
+  const intent = Alexa.getIntentName(h.requestEnvelope); const pending = readPending(h); clearPending(h);
+  if (pending) return response('Tudo bem. A operação foi cancelada.');
+  if (intent === 'AMAZON.NoIntent') return response('Tudo bem. Até logo.');
+  return response('Certo. Encerrando o meu roteador.');
+} };
 const helpHandler = { canHandle: (h) => Alexa.getRequestType(h.requestEnvelope) === 'IntentRequest' && Alexa.getIntentName(h.requestEnvelope) === 'AMAZON.HelpIntent', handle: () => response('Você pode pedir um check-up, consultar WISP ou VPN, ligar a rede de convidados por um período, consultar os agendamentos ou reiniciar o roteador.', true) };
 const fallbackHandler = { canHandle: () => true, handle: () => response('Não entendi. Você pode dizer: faça um check-up da rede, ou: ligue a rede de convidados por duas horas.', true) };
-const requestLogger = { process(h) { const request = h.requestEnvelope?.request || {}; const intent = request.intent?.name ? ` intent=${request.intent.name}` : ''; console.log(`alexa request type=${request.type || 'unknown'}${intent}`); } };
+const requestLogger = { process(h) { const request = h.requestEnvelope?.request || {}; const intent = request.intent?.name ? ` intent=${request.intent.name}` : ''; const slots = Object.values(request.intent?.slots || {}).map((entry) => `${entry.name}=${String(entry.value || '').slice(0, 80)}`).join(','); console.log(`alexa request type=${request.type || 'unknown'}${intent}${slots ? ` slots=${slots}` : ''}`); } };
 const skillIdGuard = { process(h) { const received = h.requestEnvelope?.context?.System?.application?.applicationId || h.requestEnvelope?.session?.application?.applicationId; if (!ALEXA_SKILL_ID || received !== ALEXA_SKILL_ID) throw new Error('Unauthorized Alexa application'); } };
 const errorHandler = { canHandle: () => true, handle(_h, error) { console.error('alexa error:', error.message); return response('Ocorreu um erro ao processar o comando. Tente novamente em alguns instantes.'); } };
 
@@ -215,6 +230,21 @@ function createApp() {
   app.get('/health', async (_request, result) => { try { await ha('/api/'); result.json({ ok: true, home_assistant: true }); } catch { result.status(503).json({ ok: false, home_assistant: false }); } });
   app.post('/alexa', new ExpressAdapter(skill, true, true).getRequestHandlers()); return app;
 }
+function normalizeGuestAction(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  const actions = {
+    ligar: 'ligar', liga: 'ligar', ligue: 'ligar', ativar: 'ligar', ative: 'ligar',
+    habilitar: 'ligar', habilite: 'ligar', acender: 'ligar', acenda: 'ligar',
+    desligar: 'desligar', desliga: 'desligar', desligue: 'desligar', desativar: 'desligar',
+    desative: 'desligar', desabilitar: 'desligar', desabilite: 'desligar',
+    apagar: 'desligar', apague: 'desligar',
+  };
+  return actions[normalized] || normalized;
+}
 function initializeSchedules() { loadSchedules(); for (const item of guestSchedules) armSchedule(item); }
-if (require.main === module) { initializeSchedules(); createApp().listen(Number(process.env.PORT || 3000), '127.0.0.1', () => console.log('cudy-alexa listening on localhost via Home Assistant')); }
-module.exports = { createSkill, expandedBands, humanDuration, normalizeBand, parseDuration, scheduleSummary, spokenTime };
+function startServer(port = Number(process.env.PORT || 3000)) {
+  initializeSchedules();
+  return createApp().listen(port, '127.0.0.1', () => console.log(`cudy-alexa listening on 127.0.0.1:${port} via Home Assistant`));
+}
+if (require.main === module) startServer();
+module.exports = { createSkill, expandedBands, humanDuration, normalizeBand, normalizeGuestAction, parseDuration, response, scheduleSummary, spokenTime, startServer };

@@ -44,7 +44,7 @@ log "[1/12] System packages and unattended security updates"
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
   ca-certificates curl wget gnupg git jq vim htop iproute2 iputils-ping iptables \
-  openssh-server unattended-upgrades
+  openssh-server unattended-upgrades nftables
 
 timedatectl set-timezone "$TZ"
 cat >/etc/apt/apt.conf.d/20auto-upgrades <<'APTCONF'
@@ -187,7 +187,8 @@ chmod 600 /etc/home-automation/firewall.env
 install -m 0755 "$PROJECT_ROOT/scripts/configure-host-firewall.sh" /usr/local/sbin/home-automation-firewall
 install -m 0644 "$PROJECT_ROOT/systemd/home-automation-firewall.service" /etc/systemd/system/home-automation-firewall.service
 systemctl daemon-reload
-systemctl enable --now home-automation-firewall.service
+systemctl enable home-automation-firewall.service
+systemctl restart home-automation-firewall.service
 
 log "[8/12] Compose validation"
 cd "$PROJECT_ROOT"
