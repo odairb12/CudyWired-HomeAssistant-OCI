@@ -1,4 +1,4 @@
-FROM node:24.20.0-alpine
+FROM node:26.8.1-alpine
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --audit=false --fund=false \
